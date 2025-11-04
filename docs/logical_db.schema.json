@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Logical DB v1.0",
+  "type": "object",
+  "required": ["version", "design", "top", "instances", "ports", "type_counts"],
+  "properties": {
+    "version": { "type": "string", "enum": ["1.0"] },
+    "design": { "type": "string", "minLength": 1 },
+    "top": { "type": "string", "minLength": 1 },
+    "library": { "type": "string" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "mapped_json": { "type": "string" },
+        "generator": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "instances": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "pins"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "pins": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "attrs": {
+            "type":"object",
+            "properties": {
+              "is_seq": { "type": "boolean" },
+              "is_buffer": { "type": "boolean" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["direction", "bits"],
+        "properties": {
+          "direction": { "type": "string", "enum": ["input","output","inout"] },
+          "bits": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "attrs": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": false
+      }
+    },
+    "type_counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "stats": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}
