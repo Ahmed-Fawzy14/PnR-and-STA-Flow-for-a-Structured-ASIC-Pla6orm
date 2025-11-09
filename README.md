@@ -17,7 +17,7 @@ This repository implements a comprehensive flow for handling pin placement confi
 ├── data/                   # Data files and input specifications
 ├── docs/                   # Documentation
 ├── build/                  # Build outputs and generated files
-└── REAME.md               # Project documentation (note: typo in filename)
+└── REAME.md               # Project documentation
 ```
 
 ## 🔧 Installation
