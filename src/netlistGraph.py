@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 FOLDER = "./designs"
-OUTPUT = "./graphs"
+OUTPUT = "./build"
 
 
 def generate_graph(design_path: Path):
