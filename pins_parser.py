@@ -201,11 +201,35 @@ if __name__ == "__main__":
         if pin_list:
             print(f"\nPin list example (first pin): {pin_list[0]}")
 
-        # Save parsed pins_db to file
-        output_path = "pins_db.json"
+        # Save parsed pins_db to file (append to existing JSON)
+        output_path = "fabric_cells.json"
+
+        # ✅ Try to read existing JSON, otherwise start empty
+        try:
+            with open(output_path, "r") as f:
+                existing = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing = {}
+
+        # ✅ Append / replace pins field, keep everything else untouched
+        # Merge everything, don't remove existing fields
+        existing.update({
+            "pins": pins_db.get("pins", []),
+            "version": pins_db.get("version", existing.get("version")),
+            "units": pins_db.get("units", existing.get("units")),
+            "layers": pins_db.get("layers", existing.get("layers")),
+            "tracks": pins_db.get("tracks", existing.get("tracks")),
+            "die": pins_db.get("die", existing.get("die")),
+            "core": pins_db.get("core", existing.get("core")),
+        })
+
+
+        # ✅ Write back without overwriting unrelated fields
         with open(output_path, "w") as f:
-            json.dump(pins_db, f, indent=2)
-        print(f"\nSaved parsed data to {output_path}")
+            json.dump(existing, f, indent=2)
+
+        print(f"\n✅ Pins appended/updated in {output_path}")
+
 
         
     except FileNotFoundError as e:
