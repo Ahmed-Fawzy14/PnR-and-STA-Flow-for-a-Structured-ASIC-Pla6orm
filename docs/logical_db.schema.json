@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Logical DB v1.0",
+  "type": "object",
+  "required": ["version", "design", "top", "instances", "ports", "type_counts"],
+  "properties": {
+    "version": { "type": "string", "enum": ["1.0"] },
+    "design":  { "type": "string", "minLength": 1 },
+    "top":     { "type": "string", "minLength": 1 },
+    "library": { "type": "string" },
+
+    "source": {
+      "type": "object",
+      "properties": {
+        "mapped_json": { "type": "string" },
+        "generator":   { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+
+    "instances": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "pins"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "pins": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "attrs": {
+            "type": "object",
+            "properties": {
+              "is_seq":    { "type": "boolean" },
+              "is_buffer": { "type": "boolean" }
+            },
+            "additionalProperties": true
+          },
+          "params": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "ports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["direction", "bits"],
+        "properties": {
+          "direction": { "type": "string", "enum": ["input", "output", "inout"] },
+          "bits": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "width": { "type": "integer", "minimum": 1 },
+          "attrs": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "buses": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "direction": { "type": "string", "enum": ["input", "output", "inout", "unknown"] },
+          "members": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "nets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "attrs": { "type": "object", "additionalProperties": true },
+          "hide_name": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "net_graph": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "drivers": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": [
+                { "type": "string" },   /* instance name */
+                { "type": "string" }    /* pin name */
+              ]
+            }
+          },
+          "sinks": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": [
+                { "type": "string" },
+                { "type": "string" }
+              ]
+            }
+          }
+        },
+        "required": ["drivers", "sinks"],
+        "additionalProperties": false
+      }
+    },
+
+    "type_counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+
+    "stats": {
+      "type": "object",
+      "properties": {
+        "num_instances":       { "type": "integer", "minimum": 0 },
+        "num_unique_types":    { "type": "integer", "minimum": 0 },
+        "num_ports":           { "type": "integer", "minimum": 0 },
+        "num_bits_referenced": { "type": "integer", "minimum": 0 },
+        "num_multidriver_bits":{ "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+
+    "indexes": {
+      "type": "object",
+      "properties": {
+        "inputs":  { "type": "array", "items": { "type": "string" } },
+        "outputs": { "type": "array", "items": { "type": "string" } },
+        "by_type": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
