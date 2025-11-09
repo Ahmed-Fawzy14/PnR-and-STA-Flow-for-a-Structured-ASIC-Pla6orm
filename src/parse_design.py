@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-# src/parse_design.py
-#
-# Convert Yosys <design>_mapped.json into a normalized logical_db.json
-# Supports multiple input files in one run.
-#
-# Usage examples:
-#   python3 src/parse_design.py --mapped-json data/z80_mapped.json
-#   python3 src/parse_design.py --mapped-json data/6502_mapped.json data/aes_128_mapped.json
-#   python3 src/parse_design.py --mapped-json data/*_mapped.json --design 6502 aes_128 arith z80
 
 import argparse
 import json
@@ -15,13 +5,9 @@ import os
 import re
 import sys
 from typing import Dict, Any, List, Set, Optional
-
-
 LogicalDB = Dict[str, Any]
 
-# ----------------------------------------------------------------------
-# In-memory IR template
-# ----------------------------------------------------------------------
+
 def _new_logical_db() -> LogicalDB:
     return {
         "version": "1.0",
@@ -44,9 +30,7 @@ def _new_logical_db() -> LogicalDB:
     }
 
 
-# ----------------------------------------------------------------------
-# Basic helpers
-# ----------------------------------------------------------------------
+
 def open_design(file_name: str) -> Dict[str, Any]:
     try:
         with open(file_name, "r", encoding="utf-8") as f:
@@ -86,9 +70,7 @@ def pick_top_module(data: Dict[str, Any]) -> str:
     raise ValueError("Cannot determine top module (no explicit top and multiple modules present).")
 
 
-# ----------------------------------------------------------------------
-# Constants handling: '0','1','x','z' -> synthetic bit IDs
-# ----------------------------------------------------------------------
+
 def build_const_bit_map(data: dict, top: str) -> Dict[str, int]:
     def _collect_int_bits() -> Set[int]:
         ints: Set[int] = set()
@@ -142,9 +124,7 @@ def _register_const_driver(db: LogicalDB, bit_id: int, symbol: str) -> None:
         node["drivers"].append(entry)
 
 
-# ----------------------------------------------------------------------
-# Ports / buses / IO indexes
-# ----------------------------------------------------------------------
+
 def parse_ports(db: LogicalDB, data: Dict[str, Any], top: str) -> None:
     db["ports"].clear()
     db["buses"].clear()
@@ -190,9 +170,7 @@ def parse_ports(db: LogicalDB, data: Dict[str, Any], top: str) -> None:
     db["indexes"]["outputs"].sort(key=lambda n: (n.split("_")[0], n))
 
 
-# ----------------------------------------------------------------------
-# Instances + by_type index (with constants mapping)
-# ----------------------------------------------------------------------
+
 def _looks_sequential(cell_type: str) -> bool:
     t = cell_type.lower()
     return any(k in t for k in ("dff", "dfx", "dlat", "sdff", "flop", "ff_", "_ff"))
@@ -256,9 +234,7 @@ def parse_instances(db: LogicalDB, data: Dict[str, Any], top: str, const_map: Di
         db["indexes"]["by_type"].setdefault(ctype, []).append(inst_name)
 
 
-# ----------------------------------------------------------------------
-# Netnames (optional enrichment)
-# ----------------------------------------------------------------------
+
 def parse_netnames(db: LogicalDB, data: Dict[str, Any], top: str) -> None:
     db["nets"].clear()
     nets = data["modules"][top].get("netnames", {})
@@ -276,9 +252,7 @@ def parse_netnames(db: LogicalDB, data: Dict[str, Any], top: str) -> None:
                 }
 
 
-# ----------------------------------------------------------------------
-# Net graph (drivers/sinks) + multi-driver count + constants drivers
-# ----------------------------------------------------------------------
+
 _OUTPUT_PIN_HINTS = {"X", "Y", "Z", "Q", "QN", "QB", "Q_N", "Z0", "Z1", "ZN"}
 
 def build_net_graph(db: LogicalDB, data: Dict[str, Any], top: str, const_map: Dict[str, int]) -> None:
@@ -329,9 +303,7 @@ def build_net_graph(db: LogicalDB, data: Dict[str, Any], top: str, const_map: Di
     db["stats"]["num_multidriver_bits"] = multi
 
 
-# ----------------------------------------------------------------------
-# Counts / stats / library
-# ----------------------------------------------------------------------
+
 def compute_type_counts(db: LogicalDB) -> None:
     counts: Dict[str, int] = {}
     for inst in db["instances"].values():
@@ -370,9 +342,7 @@ def infer_library_from_types(types: List[str]) -> str:
     return "unknown"
 
 
-# ----------------------------------------------------------------------
-# Build one logical DB from a mapped file
-# ----------------------------------------------------------------------
+
 def build_logical_db(mapped_json_path: str, design_name: Optional[str] = None) -> LogicalDB:
     data = open_design(mapped_json_path)
     top = pick_top_module(data)
@@ -415,9 +385,7 @@ def write_output(db: LogicalDB, out_path: str) -> None:
         f.write("\n")
 
 
-# ----------------------------------------------------------------------
-# CLI (multi-file)
-# ----------------------------------------------------------------------
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Parse one or more Yosys <design>_mapped.json files into logical_db.json")
     p.add_argument(
