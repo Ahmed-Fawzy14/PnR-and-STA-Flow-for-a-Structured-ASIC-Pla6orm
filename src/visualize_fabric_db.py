@@ -1,15 +1,11 @@
-#!/usr/bin/env python3
-# Ultra-fast PNG visualizer using Pillow (no Matplotlib).
-# Frame/legend/dimensions/rulers + UI scaling + pin label modes.
-# UPDATED: honors fabric_info.site_dimensions_um and per-gate width_sites.
-# NEW: --tight (no whitespace) and --debug-cells (print every gate's computed dims & scaled dims).
-
 import argparse, json, os
 from collections import Counter
 from typing import Any, Dict, List, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
-# ---------- IO ----------
+
+
+#  IO 
 def load_json(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -19,7 +15,7 @@ def ensure_dir_for(path: str) -> None:
     if d:
         os.makedirs(d, exist_ok=True)
 
-# ---------- Colors ----------
+#  Colors 
 PIN_COLORS = {"INPUT": (31,119,180), "OUTPUT": (255,127,14), "INOUT": (44,160,44)}  # rgb
 SLOT_PALETTE = [
     (31,119,180), (255,127,14), (44,160,44), (214,39,40), (148,103,189),
@@ -37,7 +33,7 @@ def with_alpha(rgb: Tuple[int,int,int], alpha: float) -> Tuple[int,int,int,int]:
     a = max(0, min(255, int(round(alpha * 255))))
     return (rgb[0], rgb[1], rgb[2], a)
 
-# ---------- Site dimensions ----------
+#  Site dimensions 
 def get_site_dims_um(fab: Dict[str, Any], default_w: float, default_h: float) -> Tuple[float, float]:
     fi = fab.get("fabric_info", {}) if isinstance(fab, dict) else {}
     sdim = fi.get("site_dimensions_um", {}) if isinstance(fi, dict) else {}
@@ -47,18 +43,8 @@ def get_site_dims_um(fab: Dict[str, Any], default_w: float, default_h: float) ->
     site_h_um = float(sh) if sh is not None else float(default_h)
     return site_w_um, site_h_um
 
-# ---------- Fabric parsing ----------
+#  Fabric parsing
 def collect_slots(fab: Dict[str, Any], default_w: float, default_h: float) -> List[Dict[str, Any]]:
-    """
-    Width priority:
-      1) width_sites * site_width_um
-      2) gate.w
-      3) default_w
-    Height priority:
-      A) site_height_um
-      B) gate.h
-      C) default_h
-    """
     site_w_um, site_h_um = get_site_dims_um(fab, default_w, default_h)
     slots: List[Dict[str, Any]] = []
 
@@ -77,7 +63,7 @@ def collect_slots(fab: Dict[str, Any], default_w: float, default_h: float) -> Li
             y_um = float(g.get("y", g.get("y_um", 0.0)))
 
             slots.append({
-                "name": g.get("name", ""),                    # keep name for debugging
+                "name": g.get("name", ""),
                 "type": g.get("type","UNK"),
                 "x": x_um, "y": y_um, "w": w_um, "h": h_um,
                 "width_sites": w_sites,
@@ -142,16 +128,48 @@ def normalize_die_core(fab: Dict[str, Any], slots: List[Dict[str, Any]]):
         pre = {"xmin": min(xs), "ymin": min(ys), "xmax": max(s["x"]+s["w"] for s in slots), "ymax": max(s["y"]+s["h"] for s in slots)}
     return die, core, pre, origin
 
-def parse_pins(fab: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+def parse_pins(fab: Dict[str, Any], die_um: Dict[str, Any]) -> List[Dict[str, Any]]:
     pins: List[Dict[str, Any]] = []
+    die_w = die_um["width_um"]
+    die_h = die_um["height_um"]
+
+    print(f"[DEBUG parse_pins] die_w={die_w:.2f}, die_h={die_h:.2f}")  # ADD THIS
+
     for p in fab.get("pins", []):
+        side = p.get("side", "").lower()
+        x_um = float(p.get("x_um", p.get("x", 0.0)))
+        y_um = float(p.get("y_um", p.get("y", 0.0)))
+
+        print(f"[DEBUG] Pin {p.get('name', '')} side={side} x_um={x_um} y_um={y_um}")  # ADD THIS
+
+        # Adjust position based on side
+        if side == "west":
+            final_x = 0.0
+            final_y = y_um
+        elif side == "east":
+            final_x = die_w
+            final_y = y_um
+        elif side == "north":
+            final_x = x_um
+            final_y = die_h
+        elif side == "south":
+            final_x = x_um
+            final_y = 0.0
+        else:
+            final_x = x_um
+            final_y = y_um
+
+        print(f"[DEBUG]   -> final_x={final_x:.2f}, final_y={final_y:.2f}")  # ADD THIS
+
         pins.append({
-            "pin_id": p.get("name",""),
-            "x": float(p.get("x_um", p.get("x", 0.0))),
-            "y": float(p.get("y_um", p.get("y", 0.0))),
+            "pin_id": p.get("name", ""),
+            "side": side,
+            "x": final_x,
+            "y": final_y,
             "w": float(p.get("w", 2.0)),
             "h": float(p.get("h", 2.0)),
-            "direction": p.get("direction",""),
+            "direction": p.get("direction", ""),
         })
     return pins
 
@@ -174,7 +192,7 @@ def compute_tile_boxes(fab: Dict[str, Any]):
             boxes[t.get("name","")] = (min(xs), min(ys), max(xes), max(yes))
     return boxes
 
-# ---------- Scaling ----------
+#  Scaling 
 def auto_scale(die_um: Dict[str,float], args) -> float:
     if args.scale is not None:
         return float(args.scale)
@@ -203,14 +221,19 @@ def scale_all(die_um, core_um, slots, pins, tiles, scale, fat_x_px, fat_y_px):
         "h": max(0.0, s["h"]*scale + fat_y_px),
         "__orig": s
     } for s in slots]
-    pins_px = [{"pin_id": p["pin_id"],
-                "x": p["x"]*scale, "y": p["y"]*scale,
-                "w": p["w"]*scale, "h": p["h"]*scale,
-                "direction": p["direction"]} for p in pins]
+    pins_px = [{
+        "pin_id": p["pin_id"],
+        "side": p["side"],
+        "x": p["x"] * scale,
+        "y": p["y"] * scale,
+        "w": p["w"] * scale,
+        "h": p["h"] * scale,
+        "direction": p["direction"]
+    } for p in pins]
     tiles_px = {k: (x0*scale, y0*scale, x1*scale, y1*scale) for k,(x0,y0,x1,y1) in tiles.items()}
     return die_px, core_px, slots_px, pins_px, tiles_px
 
-# ---------- Draw helpers ----------
+#  Draw helpers 
 def y_map(y: float, h: float, H: float, y_origin: str) -> float:
     return H - (y + h) if y_origin == "bottom" else y
 
@@ -299,7 +322,7 @@ def _text_wh(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) ->
     l,t,r,b = draw.textbbox((0,0), text, font=font)
     return (r-l, b-t)
 
-# ---------- Render ----------
+#  Render 
 def render_png(out_path: str,
                die_px: Dict[str,float],
                core_px: Dict[str,float],
@@ -324,16 +347,14 @@ def render_png(out_path: str,
                show_rulers: bool = True,
                pin_label_mode: str = "outside",
                pin_label_font_px: int = 12,
-               tight: bool = False):
-    """
-    If tight=True: draw ONLY the die/core/slots/pins (no margins/title/panels/rulers/scale bar).
-    Canvas = die size exactly, so there is zero whitespace.
-    """
+               tight: bool = False,
+               border_width: int = 2):
+
     s = max(0.5, float(ui_scale))
     if tight:
         margin_left = margin_right = margin_top = margin_bottom = 0
         show_core_dims = show_die_dims = show_rulers = False
-        pin_label_mode = "inline"  # outside labels would need a right margin
+        pin_label_mode = "inline"  # outside labels would need a right/left margin
     else:
         margin_left   = int(round(margin_left   * s))
         margin_right  = int(round(margin_right  * s))
@@ -341,14 +362,14 @@ def render_png(out_path: str,
         margin_bottom = int(round(margin_bottom * s))
 
     # --- fonts (sizes) ---
-    font_base_px = max(10, int(round(12 * s)))
-    font_small_px = max(9, int(round(10 * s)))
-    pin_font_px = max(8, int(round(pin_label_font_px * s)))
+    font_base_px  = max(10, int(round(12 * s)))
+    font_small_px = max(9,  int(round(10 * s)))
+    pin_font_px   = max(8,  int(round(pin_label_font_px * s)))
 
     # --- font objects ---
-    font = try_font(font_base_px)
+    font       = try_font(font_base_px)
     font_small = try_font(font_small_px)
-    pin_font = try_font(pin_font_px)
+    pin_font   = try_font(pin_font_px)
 
     W_f = int(round(die_px["width"]))
     H_f = int(round(die_px["height"]))
@@ -360,10 +381,15 @@ def render_png(out_path: str,
     img = Image.new("RGBA", (CW, CH), (255,255,255,255))
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # Title + outer border only if not tight
+    overlay = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay, "RGBA")
     if not tight:
-        draw.rectangle([1, 1, CW-2, CH-2], outline=(80,80,80,255), width=1)
+        if border_width > 0:
+            # crisp outer border
+            bw = int(border_width)
+            draw.rectangle([bw//2, bw//2, CW-1-bw//2, CH-1-bw//2], outline=(80,80,80,255), width=bw)
         draw.text((ox, int(22*s)), title, font=font, fill=(34,34,34,255))
+        # North arrow
         draw.line([(CW - int(30*s), int(44*s)), (CW - int(30*s), int(68*s))], fill=(0,0,0,255), width=2)
         draw.text((CW - int(44*s), int(26*s)), "N", font=font, fill=(0,0,0,255))
 
@@ -387,36 +413,35 @@ def render_png(out_path: str,
     if show_rulers and not tight:
         draw_ruler(draw, ox, oy - int(20*s), W_f, scale_px_per_um, every_um=50, label_every_um=200, horizontal=True, color=(0,0,0,160), font=font_small)
         draw_ruler(draw, ox - int(20*s), oy, H_f, scale_px_per_um, every_um=50, label_every_um=200, horizontal=False, color=(0,0,0,160), font=font_small)
-        draw.text((ox - int(45 * s), oy - int(36 * s)), "µm", font=font_small, fill=(60, 60, 60, 200))
+        draw.text((ox - int(45 * s), oy - int(36 * s)), "µm", font=font_small, fill=(60,60,60,200))
 
-    # Sparse tile grid
+    # Sparse tile grid (faint)
     if show_tile_grid and tile_grid_stride > 0:
         i = 0
         for _, (x0, y0, x1, y1) in tiles_px.items():
             if (i % tile_grid_stride) == 0:
                 w, h = (x1 - x0), (y1 - y0)
                 tx, ty = to_canvas_xy(x0, y0, h, H_f, ox, oy, y_origin)
-                draw_rect(draw, tx, ty, w, h, fill=None, outline=(204,204,204,220), width=1)
+                draw_rect(draw, tx, ty, w, h, fill=None, outline=(204,204,204,180), width=1)
             i += 1
 
-    # Slots
+    # Slots (semi-transparent)
     type_rgba: Dict[str, Tuple[int,int,int,int]] = {
-        t: with_alpha(slot_colors.get(t, (170,170,170)), slot_alpha) for t in slot_colors
+        t: with_alpha(slot_colors.get(t, (170,170,170)), 0.5) for t in slot_colors
     }
-    edge = (34,34,34,180)
+    edge = (34,34,34,160)
     for srec in slots_px:
         tx, ty = to_canvas_xy(srec["x"], srec["y"], srec["h"], H_f, ox, oy, y_origin)
-        draw_rect(draw, tx, ty, srec["w"], srec["h"],
-                  fill=type_rgba.get(srec["type"], with_alpha((170,170,170), slot_alpha)),
+        draw_rect(odraw, tx, ty, srec["w"], srec["h"],
+                  fill=type_rgba.get(srec["type"], with_alpha((170,170,170), 0.5)),
                   outline=edge, width=1)
         srec["__canvas_xy"] = (tx, ty)
 
-    # Pins
     for p in pins_px:
         rgb = PIN_COLORS.get(p.get("direction","").upper(), (34,34,34))
-        fill = with_alpha(rgb, 0.85)
+        fill = with_alpha(rgb, 0.5)
         tx, ty = to_canvas_xy(p["x"], p["y"], p["h"], H_f, ox, oy, y_origin)
-        draw_rect(draw, tx, ty, p["w"], p["h"], fill=fill, outline=(17,17,17,220), width=1)
+        draw_rect(odraw, tx, ty, p["w"], p["h"], fill=fill, outline=(17,17,17,210), width=1)
         p["__canvas_xy"] = (tx, ty)
         p["__center"] = (tx + p["w"]/2.0, ty + p["h"]/2.0)
 
@@ -432,13 +457,13 @@ def render_png(out_path: str,
         shown = 0
         for t, rgb in sorted(slot_colors.items(), key=lambda kv: kv[0]):
             if shown >= 28: break
-            draw_rect(draw, panel_x + int(12*s), ly, int(16*s), int(12*s), fill=with_alpha(rgb, slot_alpha), outline=(51,51,51,255), width=1)
+            draw_rect(odraw, panel_x + int(12*s), ly, int(16*s), int(12*s), fill=with_alpha(rgb, 0.5), outline=(51,51,51,255), width=1)
             draw.text((panel_x + int(34*s), ly - int(2*s)), f"{t}  (×{hist.get(t,0)})", font=font, fill=(34,34,34,255))
             ly += int(16*s); shown += 1
         ly += int(8*s)
         draw.text((panel_x + int(10*s), ly), "Pins:", font=font, fill=(34,34,34,255)); ly += int(16*s)
         for label, rgb in PIN_COLORS.items():
-            draw_rect(draw, panel_x + int(12*s), ly, int(16*s), int(12*s), fill=with_alpha(rgb, 0.85), outline=(51,51,51,255), width=1)
+            draw_rect(draw, panel_x + int(12*s), ly, int(16*s), int(12*s), fill=with_alpha(rgb, 0.5), outline=(51,51,51,255), width=1)
             draw.text((panel_x + int(34*s), ly - int(2*s)), label, font=font, fill=(34,34,34,255))
             ly += int(16*s)
 
@@ -467,8 +492,10 @@ def render_png(out_path: str,
         draw_rect(draw, bx, by, bar_px, int(6*s), fill=(0,0,0,255), outline=(0,0,0,255))
         draw.text((bx, by - int(18 * s)), f"{int(bar_um)} µm  ({bar_px} px)", font=font_small, fill=(34, 34, 34, 255))
 
-        # Pin labels
-        if pin_label_mode.lower() == "outside":
+        # Pin labels (crowding-safe)
+        if pin_label_mode.lower() == "outside-smart":
+            _labels_outside_smart(draw, pins_px, ox, oy, W_f, H_f, s, pin_font)
+        elif pin_label_mode.lower() == "outside":
             _labels_outside_right(draw, pins_px, ox, oy, W_f, H_f, s, pin_font, font_small)
         elif pin_label_mode.lower() == "inline":
             _labels_inline(draw, pins_px, s, pin_font, avoid_overlaps=False)
@@ -480,10 +507,11 @@ def render_png(out_path: str,
             _labels_inline(draw, pins_px, 1.0, try_font(10), avoid_overlaps=True)
 
     ensure_dir_for(out_path)
+    img.alpha_composite(overlay)
     img.save(out_path, format="PNG")
     print(f"[OK] Wrote PNG: {out_path}")
 
-# ---------- Pin label strategies ----------
+#  Pin label strategies 
 def _labels_inline(draw: ImageDraw.ImageDraw,
                    pins_px: List[Dict[str,Any]],
                    ui_scale: float,
@@ -531,13 +559,65 @@ def _labels_outside_right(draw: ImageDraw.ImageDraw,
         draw.line([(mid_x, cy), (lx - int(6*ui_scale), ly + th//2)], fill=(60,60,60,220), width=1)
         ycur += line_gap
 
-# ---------- Debug ----------
+def _labels_outside_smart(draw: ImageDraw.ImageDraw,
+                          pins_px: List[Dict[str,Any]],
+                          ox: int, oy: int, W_f: int, H_f: int,
+                          ui_scale: float,
+                          font: ImageFont.ImageFont):
+
+    if not pins_px:
+        return
+
+    # Split by die center
+    cx_mid = ox + W_f / 2.0
+    left_pins, right_pins = [], []
+    for p in pins_px:
+        cx, cy = p["__center"]
+        (left_pins if cx <= cx_mid else right_pins).append(p)
+
+    left_pins.sort(key=lambda pp: pp["__center"][1])
+    right_pins.sort(key=lambda pp: pp["__center"][1])
+
+    gap_side = int(24 * ui_scale)          # gap between die edge and leader junction
+    text_gap = int(8 * ui_scale)           # gap from leader to text
+    line_gap = max(14, int(16 * ui_scale)) # min vertical gap between labels
+
+    left_x  = ox - gap_side
+    right_x = ox + W_f + gap_side
+
+    def pack_side(pins_ordered, side: str):
+        placed_y = -10**9
+        for p in pins_ordered:
+            label = str(p.get("pin_id", ""))
+            tw, th = _text_wh(draw, label, font)
+            cx, cy = p["__center"]
+
+            # target y near the pin, then enforce spacing
+            ty = max(cy - th//2, placed_y + line_gap)
+            ty = int(max(oy + 2, min(oy + H_f - th - 2, ty)))  # clamp
+            placed_y = ty
+
+            if side == "right":
+                lx = right_x + text_gap
+                draw.line([(cx, cy), (right_x, cy)], fill=(60,60,60,220), width=1)
+                draw.line([(right_x, cy), (lx - text_gap//2, ty + th//2)], fill=(60,60,60,220), width=1)
+                draw.text((lx, ty), label, font=font, fill=(34,34,34,255))
+            else:
+                lx = left_x - text_gap - tw
+                draw.line([(cx, cy), (left_x, cy)], fill=(60,60,60,220), width=1)
+                draw.line([(left_x, cy), (lx + tw + text_gap//2, ty + th//2)], fill=(60,60,60,220), width=1)
+                draw.text((lx, ty), label, font=font, fill=(34,34,34,255))
+
+    pack_side(left_pins,  "left")
+    pack_side(right_pins, "right")
+
+#  Debug 
 def dump_hist(slots: List[Dict[str, Any]]) -> Counter:
     return Counter(s["type"] for s in slots)
 
-# ---------- CLI ----------
+#  CLI 
 def main():
-    ap = argparse.ArgumentParser(description="Fast PNG fabric visualizer. Honors width_sites+site_dimensions_um. Adds --tight and --debug-cells.")
+    ap = argparse.ArgumentParser(description="Fast PNG fabric visualizer. Honors width_sites+site_dimensions_um. Adds border + outside-smart labels.")
     ap.add_argument("--fabric-db", required=True, help="Path to fabric_db.json")
     ap.add_argument("--out", required=True, help="Output PNG")
 
@@ -558,19 +638,22 @@ def main():
     ap.add_argument("--debug", action="store_true", help="Verbose summary debug.")
     ap.add_argument("--debug-samples", type=int, default=8, help="How many slot samples to show.")
 
-    # New controls:
+    # UI controls
     ap.add_argument("--ui-scale", type=float, default=1.4, help="Scale ONLY UI (fonts/margins/panels).")
-    ap.add_argument("--pin-label-mode", choices=["inline","outside","none","smart"], default="outside",
-                    help="Pin labels: inline | outside | none | smart")
+    ap.add_argument("--pin-label-mode",
+                    choices=["inline","outside","outside-smart","none","smart"],
+                    default="outside-smart",
+                    help="Pin labels: inline | outside (right only) | outside-smart (both sides, non-overlap) | none | smart (inline non-overlap)")
     ap.add_argument("--pin-label-font", type=int, default=12, help="Base pin label font size (px).")
     ap.add_argument("--no-core-dims", action="store_true", help="Hide core dimension arrows.")
     ap.add_argument("--no-die-dims", action="store_true", help="Hide die dimension arrows.")
     ap.add_argument("--no-rulers",    action="store_true", help="Hide µm rulers.")
+    ap.add_argument("--border-width", type=int, default=2, help="Outer border width in pixels (0 = no border).")
 
-
-    # New: exact-size canvas (no whitespace)
+    # Canvas modes
     ap.add_argument("--tight", action="store_true", help="Render die-only (no margins/title/legend/rulers).")
-    # New: print every cell’s computed & scaled dims
+
+    # Debug cells
     ap.add_argument("--debug-cells", action="store_true", help="Print a line for every gate with µm and px sizes/positions.")
 
     args = ap.parse_args()
@@ -578,7 +661,7 @@ def main():
     fab = load_json(args.fabric_db)
     slots = collect_slots(fab, args.slot_w, args.slot_h)
     die_um, core_um, pre_bounds, origin = normalize_die_core(fab, slots)
-    pins = parse_pins(fab)
+    pins = parse_pins(fab, die_um)
     tiles_um = compute_tile_boxes(fab)
 
     # scale
@@ -587,7 +670,6 @@ def main():
         die_um, core_um, slots, pins, tiles_um, scale, args.slot_fat_x, args.slot_fat_y
     )
 
-    # optional debug summaries
     if args.debug:
         site_w_um, site_h_um = get_site_dims_um(fab, args.slot_w, args.slot_h)
         tiles_count = len(fab.get("tiles", []))
@@ -607,7 +689,7 @@ def main():
             print(f"  {t:>10s}: {c}")
         print(f"[DEBUG] y-origin: {args.y_origin}, scale: {scale:.4f} px/µm (auto if None), fit width: {args.target_width}px")
 
-    # per-cell prints
+    #per-cell prints
     if args.debug_cells:
         print("[DEBUG-CELLS] name,type,phys,width_sites,w_um,h_um,x_um,y_um -> x_px,y_px,w_px,h_px")
         for sp in slots_px:
@@ -648,6 +730,7 @@ def main():
         pin_label_mode=args.pin_label_mode,
         pin_label_font_px=args.pin_label_font,
         tight=args.tight,
+        border_width=args.border_width,
     )
 
 if __name__ == "__main__":
