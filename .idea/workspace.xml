@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="4106b6ed-96a9-4bf4-8b7c-fca83681df61" name="Changes" comment="Added open_design and parse_ports to parse_design.py" />
+    <list default="true" id="4106b6ed-96a9-4bf4-8b7c-fca83681df61" name="Changes" comment="Added open_design and parse_ports to parse_design.py">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -43,27 +45,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.parse_design.executor": "Run",
-    "Python.validate_design.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "dart.analysis.tool.window.visible": "false",
-    "git-widget-placeholder": "feature/visualize",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "terminal",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.parse_design.executor&quot;: &quot;Run&quot;,
+    &quot;Python.validate_design.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;dart.analysis.tool.window.visible&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;temp/reorgainze&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;terminal&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\build\z80" />
+      <recent name="D:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\build\arith" />
+      <recent name="D:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\build\aes_128" />
+      <recent name="D:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\build\6502" />
+      <recent name="D:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\build\fabric" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -83,6 +94,8 @@
       <workItem from="1762620236826" duration="4323000" />
       <workItem from="1762625019841" duration="217000" />
       <workItem from="1762625264691" duration="14779000" />
+      <workItem from="1762772142750" duration="118000" />
+      <workItem from="1763266922410" duration="16000" />
     </task>
     <task id="LOCAL-00001" summary="Added open_design and parse_ports to parse_design.py">
       <option name="closed" value="true" />
