@@ -1,180 +1,230 @@
-#!/usr/bin/env python3
-"""
-Greedy placer using precomputed data_structures.json.
-
-Pipeline:
-
-1) Load data_structures.json (from dataStructuresGenerator.py).
-2) Extract:
-   - logical.instances          (list of inst_names in a deterministic order)
-   - logical.cell_type          (inst -> physical cell type string)
-   - fabric.slots_by_phys_type  (phys_type -> [slot_names...])
-3) For each instance in order:
-   - ctype = cell_type[inst]
-   - bucket = slots_by_phys_type[ctype]
-   - pop one slot and assign inst -> slot
-4) Write a simple map file for OpenROAD:
-     "<inst_name> <slot_name>\\n"
-"""
-
-import argparse
-import json
+# run_placement.py
+import math
+import sys
 import os
-from collections import Counter
-from typing import Any, Dict, List
+import heapq
+import json
+import argparse
+from collections import defaultdict
 
 
-# ---------------- IO ----------------
+class GreedyPlacer:
+    def __init__(self, design_name, processed_json_path):
+        self.design_name = design_name
 
-def load_json(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        print(f"[{design_name}] Loading pre-compiled structures from {processed_json_path}...")
 
+        try:
+            with open(processed_json_path, 'r') as f:
+                self.data = json.load(f)
+        except FileNotFoundError:
+            print(f"Error: Could not find data file: {processed_json_path}")
+            sys.exit(1)
 
-def ensure_dir_for(path: str) -> None:
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
+        # Unpack structures
+        self.logical_db = self.data["logical_db"]
+        self.fabric_db = self.data["fabric_db"]
+        self.slot_coords = self.data["slot_coords"]
+        self.slot_type = self.data["slot_type"]
+        self.slots_by_type = self.data["slots_by_type"]
+        self.cell_type = self.data["cell_type"]
+        self.net_to_pins = self.data["net_to_pins"]
+        self.pin_coords = self.data["pin_coords"]
 
+        # RECONSTRUCT SETS from Lists
+        self.inst_to_nets = {k: set(v) for k, v in self.data["inst_to_nets"].items()}
 
-# ---------------- Coverage summary ----------------
+        # Initialize State
+        self.placement = {}  # instance_name -> slot_name
+        self.occupied_slots = set()
+        self.unplaced_instances = set(self.logical_db.keys())
 
-def summarize_type_coverage(
-    instances: List[str],
-    cell_type: Dict[str, str],
-    slots_by_phys_type: Dict[str, List[str]],
-) -> None:
-    type_counts = Counter(cell_type[inst] for inst in instances)
+    def get_distance(self, x1, y1, x2, y2):
+        return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
-    print("=== Type coverage summary ===")
-    for ctype in sorted(type_counts.keys()):
-        count_cells = type_counts[ctype]
-        num_slots = len(slots_by_phys_type.get(ctype, []))
-        print(f"  {ctype:40s} : {count_cells:5d} cells, {num_slots:5d} slots")
-    print("=============================\n")
+    def find_nearest_slot(self, target_x, target_y, required_type):
+        best_slot = None
+        min_dist = float('inf')
 
+        candidate_slots = self.slots_by_type.get(required_type, [])
 
-# ---------------- Greedy placement ----------------
+        for slot_name in candidate_slots:
+            if slot_name in self.occupied_slots:
+                continue
 
-def greedy_place(
-    instances: List[str],
-    cell_type: Dict[str, str],
-    slots_by_phys_type: Dict[str, List[str]],
-    strict: bool = True,
-) -> Dict[str, str]:
-    """
-    Greedy placement:
+            sx, sy = self.slot_coords[slot_name]
+            dist = self.get_distance(target_x, target_y, sx, sy)
 
-    For each instance in 'instances' order:
-      - ctype = cell_type[inst]
-      - bucket = slots_by_phys_type[ctype]
-      - pop(0) from bucket and assign that slot to inst.
+            if dist < min_dist:
+                min_dist = dist
+                best_slot = slot_name
 
-    If no bucket or empty bucket:
-      - strict=True  -> raise RuntimeError
-      - strict=False -> print error and leave inst unplaced
-    """
-    placement: Dict[str, str] = {}
+        return best_slot
 
-    missing_bucket_types = set()
-    exhausted_bucket_types = set()
+    def place_instance(self, inst_name, target_x, target_y):
+        c_type = self.cell_type[inst_name]
+        slot = self.find_nearest_slot(target_x, target_y, c_type)
 
-    for inst_name in instances:
-        ctype = cell_type.get(inst_name)
-        if not ctype:
-            msg = f"[ERROR] Instance '{inst_name}' has no recorded cell_type."
-            if strict:
-                raise RuntimeError(msg)
-            print(msg)
-            continue
+        if slot:
+            self.placement[inst_name] = slot
+            self.occupied_slots.add(slot)
+            self.unplaced_instances.remove(inst_name)
+            return True
+        else:
+            print(f"WARNING: No '{c_type}' slots for {inst_name}")
+            return False
 
-        bucket = slots_by_phys_type.get(ctype)
-        if bucket is None:
-            missing_bucket_types.add(ctype)
-            msg = f"[ERROR] No fabric slots for cell type '{ctype}' (instance {inst_name})."
-            if strict:
-                raise RuntimeError(msg)
-            print(msg)
-            continue
+    def run_seed_placement(self):
+        """Phase 1: Place cells connected to I/Os."""
+        print("Running Seed Placement (I/O Driven)...")
+        count = 0
 
-        if not bucket:
-            exhausted_bucket_types.add(ctype)
-            msg = f"[ERROR] Fabric slots for cell type '{ctype}' exhausted (instance {inst_name})."
-            if strict:
-                raise RuntimeError(msg)
-            print(msg)
-            continue
+        io_nets = {}
 
-        slot_name = bucket.pop(0)
-        placement[inst_name] = slot_name
+        # Identify nets connected to pins
+        for net_id, pins_on_net in self.net_to_pins.items():
+            io_locs = []
+            for (name, pin_type) in pins_on_net:
+                if name in self.pin_coords:
+                    io_locs.append(self.pin_coords[name])
 
-    if missing_bucket_types:
-        print("\n[SUMMARY] Some cell types had no matching slots in the fabric:")
-        for t in sorted(missing_bucket_types):
-            print(f"  - {t}")
-        if strict:
-            print("[SUMMARY] Strict mode ON; run failed due to missing buckets.")
+            if io_locs:
+                io_nets[net_id] = io_locs
 
-    if exhausted_bucket_types:
-        print("\n[SUMMARY] Some cell types ran out of slots during placement:")
-        for t in sorted(exhausted_bucket_types):
-            print(f"  - {t}")
-        if strict:
-            print("[SUMMARY] Strict mode ON; run failed due to exhausted buckets.")
+        seed_candidates = []
 
-    return placement
+        for inst_name in list(self.unplaced_instances):
+            connected_nets = self.inst_to_nets.get(inst_name, set())
+            connected_io_locs = []
+            for net_id in connected_nets:
+                # Handle potential int/string mismatch from JSON
+                if str(net_id) in io_nets:
+                    connected_io_locs.extend(io_nets[str(net_id)])
+                elif net_id in io_nets:
+                    connected_io_locs.extend(io_nets[net_id])
 
+            if connected_io_locs:
+                avg_x = sum(x for x, y in connected_io_locs) / len(connected_io_locs)
+                avg_y = sum(y for x, y in connected_io_locs) / len(connected_io_locs)
+                seed_candidates.append((inst_name, avg_x, avg_y))
 
-# ---------------- Map file writer ----------------
+        for inst_name, x, y in seed_candidates:
+            if inst_name in self.unplaced_instances:
+                if self.place_instance(inst_name, x, y):
+                    count += 1
 
-def write_map_file(path: str, placement: Dict[str, str]) -> None:
-    ensure_dir_for(path)
-    with open(path, "w", encoding="utf-8") as f:
-        for inst_name, slot_name in placement.items():
-            f.write(f"{inst_name} {slot_name}\n")
-    print(f"[INFO] Wrote placement map to '{path}' ({len(placement)} instances).")
+        print(f"  -> Placed {count} seed instances.")
 
+    def run_grow_placement(self):
+        """Phase 2: Place remaining cells based on connectivity."""
+        print("Running Grow Placement (Connectivity Driven)...")
 
-# ---------------- CLI / main ----------------
+        connectivity_scores = defaultdict(int)
+        pq = []
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Greedy placer using data_structures.json.")
-    p.add_argument("--ds-json", required=True, help="Path to data_structures.json.")
-    p.add_argument("--out-map", required=True, help="Where to write the instance->slot map.")
-    p.add_argument(
-        "--no-strict",
-        action="store_true",
-        help="Do NOT abort on missing/exhausted slots; just warn and skip.",
-    )
-    return p.parse_args()
+        # Init scores based on seeds
+        for placed_inst in self.placement.keys():
+            self._update_neighbors(placed_inst, connectivity_scores, pq)
 
+        count = 0
+        while self.unplaced_instances:
+            best_inst = None
 
-def main() -> None:
-    args = parse_args()
+            while pq:
+                score, inst = heapq.heappop(pq)
+                score = -score
 
-    print(f"[INFO] Loading data structures from '{args.ds_json}'...")
-    ds = load_json(args.ds_json)
+                if inst not in self.unplaced_instances: continue
+                if score < connectivity_scores[inst]: continue
 
-    logical = ds["logical"]
-    fabric = ds["fabric"]
+                best_inst = inst
+                break
 
-    instances: List[str] = logical["instances"]
-    cell_type: Dict[str, str] = logical["cell_type"]
-    slots_by_phys_type: Dict[str, List[str]] = fabric["slots_by_phys_type"]
+            if best_inst is None:
+                best_inst = list(self.unplaced_instances)[0]
 
-    summarize_type_coverage(instances, cell_type, slots_by_phys_type)
+            target_x, target_y = self._calculate_barycenter(best_inst)
 
-    print("[INFO] Running greedy placement...")
-    placement = greedy_place(
-        instances=instances,
-        cell_type=cell_type,
-        slots_by_phys_type=slots_by_phys_type,
-        strict=not args.no_strict,
-    )
+            if self.place_instance(best_inst, target_x, target_y):
+                count += 1
+                self._update_neighbors(best_inst, connectivity_scores, pq)
+            else:
+                self.unplaced_instances.remove(best_inst)
 
-    print("[INFO] Writing map file...")
-    write_map_file(args.out_map, placement)
+            if count % 500 == 0:
+                sys.stdout.write(f"\r  -> Placed {count} instances...")
+                sys.stdout.flush()
+
+        print(f"\n  -> Grow phase complete. Total placed: {len(self.placement)}")
+
+    def _update_neighbors(self, placed_inst, scores, pq):
+        nets = self.inst_to_nets.get(placed_inst, set())
+        for net_id in nets:
+            pins = self.net_to_pins.get(str(net_id)) or self.net_to_pins.get(net_id) or []
+
+            for (neighbor_name, _) in pins:
+                if neighbor_name in self.unplaced_instances:
+                    scores[neighbor_name] += 1
+                    heapq.heappush(pq, (-scores[neighbor_name], neighbor_name))
+
+    def _calculate_barycenter(self, inst_name):
+        nets = self.inst_to_nets.get(inst_name, set())
+        neighbor_coords = []
+
+        for net_id in nets:
+            pins = self.net_to_pins.get(str(net_id)) or self.net_to_pins.get(net_id) or []
+
+            for (neighbor, _) in pins:
+                if neighbor in self.placement:
+                    slot = self.placement[neighbor]
+                    neighbor_coords.append(self.slot_coords[slot])
+                elif neighbor in self.pin_coords:
+                    neighbor_coords.append(self.pin_coords[neighbor])
+
+        if not neighbor_coords:
+            all_x = [c[0] for c in self.slot_coords.values()]
+            all_y = [c[1] for c in self.slot_coords.values()]
+            return (min(all_x) + max(all_x)) / 2, (min(all_y) + max(all_y)) / 2
+
+        avg_x = sum(x for x, y in neighbor_coords) / len(neighbor_coords)
+        avg_y = sum(y for x, y in neighbor_coords) / len(neighbor_coords)
+        return avg_x, avg_y
+
+    def write_map_file(self, output_file_path):
+        """Writes the placement map to the specific file path provided."""
+
+        # Ensure the directory exists (extract dir from file path)
+        output_dir = os.path.dirname(output_file_path)
+
+        # If output_dir is empty string, it means current directory, so we skip makedirs
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir)
+            except OSError as e:
+                print(f"Error creating directory {output_dir}: {e}")
+                return
+
+        print(f"Writing output to {output_file_path}...")
+        try:
+            with open(output_file_path, "w") as f:
+                for inst, slot in self.placement.items():
+                    f.write(f"{inst} {slot}\n")
+            print("Done.")
+        except IOError as e:
+            print(f"Error writing to file {output_file_path}: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run Placement on Processed Data.")
+
+    parser.add_argument("--design", required=True, help="Design Name (e.g. 6502)")
+    parser.add_argument("--data", required=True, help="Path to processed_data.json")
+    parser.add_argument("--output", required=True, help="Full path for the output .map file")
+
+    args = parser.parse_args()
+
+    placer = GreedyPlacer(args.design, args.data)
+    placer.run_seed_placement()
+    placer.run_grow_placement()
+    # Pass the exact file path from arguments
+    placer.write_map_file(args.output)
