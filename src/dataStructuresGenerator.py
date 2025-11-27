@@ -124,3 +124,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     build_and_save_structures(args.netlist, args.logical, args.fabric, args.output)
+
+
+#Example how to run:
+# python src/dataStructuresGenerator.py \
+#  --netlist build/6502/6502_mapped_netlist_graph.json \
+#  --logical build/6502/6502_logical_db.json \
+#  --fabric build/fabric/fabric_db.json \
+#  --output build/6502/data_structures.json
+
+
