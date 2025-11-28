@@ -823,6 +823,12 @@ def main() -> None:
     # Write best map
     print("[INFO] Writing best placement map...")
     write_map(args.out_map, best_placement)
+    
+    # Print final HPWL prominently
+    print("\n" + "="*60)
+    print(f"Final Total HPWL: {best_cost:.3f} µm")
+    print("="*60 + "\n")
+    
     print("[INFO] Done.")
 
 
