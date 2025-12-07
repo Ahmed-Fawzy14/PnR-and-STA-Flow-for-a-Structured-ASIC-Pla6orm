@@ -1,0 +1,172 @@
+{
+  "buffers": [
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2493",
+      "slot": "T18Y30__R1_BUF_0",
+      "children": [
+        "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1480",
+        "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1481"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2523",
+      "slot": "T18Y0__R1_BUF_0",
+      "children": [
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1422",
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1424"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2489",
+      "slot": "T18Y10__R1_BUF_0",
+      "children": [
+        "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1482",
+        "$auto$insbuf.cc:97:execute$2523"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2490",
+      "slot": "T18Y15__R1_BUF_0",
+      "children": [
+        "$auto$insbuf.cc:97:execute$2493",
+        "$auto$insbuf.cc:97:execute$2489"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2487",
+      "slot": "T18Y0__R0_BUF_0",
+      "children": [
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1425",
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1429"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2488",
+      "slot": "T18Y5__R1_BUF_0",
+      "children": [
+        "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1483",
+        "$auto$insbuf.cc:97:execute$2487"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2545",
+      "slot": "T22Y45__R0_BUF_0",
+      "children": [
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1431",
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1432"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2494",
+      "slot": "T18Y35__R1_BUF_0",
+      "children": [
+        "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1430",
+        "$auto$insbuf.cc:97:execute$2545"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2492",
+      "slot": "T18Y25__R1_BUF_0",
+      "children": [
+        "$auto$insbuf.cc:97:execute$2488",
+        "$auto$insbuf.cc:97:execute$2494"
+      ]
+    },
+    {
+      "instance": "$auto$insbuf.cc:97:execute$2491",
+      "slot": "T18Y20__R1_BUF_0",
+      "children": [
+        "$auto$insbuf.cc:97:execute$2490",
+        "$auto$insbuf.cc:97:execute$2492"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2493",
+      "sink": "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1480"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2493",
+      "sink": "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1481"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2523",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1422"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2523",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1424"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2489",
+      "sink": "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1482"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2489",
+      "sink": "$auto$insbuf.cc:97:execute$2523"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2490",
+      "sink": "$auto$insbuf.cc:97:execute$2493"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2490",
+      "sink": "$auto$insbuf.cc:97:execute$2489"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2487",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1425"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2487",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1429"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2488",
+      "sink": "$flatten\\A.\\counter_inst.$auto$ff.cc:266:slice$1483"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2488",
+      "sink": "$auto$insbuf.cc:97:execute$2487"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2545",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1431"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2545",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1432"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2494",
+      "sink": "$flatten\\A.\\gray_inst.$auto$ff.cc:266:slice$1430"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2494",
+      "sink": "$auto$insbuf.cc:97:execute$2545"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2492",
+      "sink": "$auto$insbuf.cc:97:execute$2488"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2492",
+      "sink": "$auto$insbuf.cc:97:execute$2494"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2491",
+      "sink": "$auto$insbuf.cc:97:execute$2490"
+    },
+    {
+      "driver": "$auto$insbuf.cc:97:execute$2491",
+      "sink": "$auto$insbuf.cc:97:execute$2492"
+    },
+    {
+      "driver": "clk",
+      "sink": "$auto$insbuf.cc:97:execute$2491"
+    }
+  ],
+  "dff_count": 11,
+  "buffer_count": 10
+}
