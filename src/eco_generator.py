@@ -250,6 +250,22 @@ def main():
     unused_insts = find_unused_instances_by_empty_fanout(original_graph)
     print(f"[ECO] Unused instances by empty fanout: {len(unused_insts)}")
 
+    # 2.5) Export unused-instance list + tie-low info for visualization
+    unused_list_path = base_dir / f"{design}_pd_unused_instances.json"
+    tie_info_path = base_dir / f"{design}_pd_tielo_source.json"
+
+    save_json(unused_list_path, sorted(list(unused_insts)))
+    save_json(
+        tie_info_path,
+        {
+            "tielo_inst": conb_inst,
+            "tielo_net_bit": conb_lo_bit,
+        },
+    )
+
+    print(f"[ECO] Wrote unused-instance list to: {unused_list_path}")
+    print(f"[ECO] Wrote tie-low source info to:  {tie_info_path}")
+
     # 3) Apply ECO to build the "after" graph
     after_graph = apply_pd_eco_to_graph(
         original_graph=original_graph,
@@ -277,3 +293,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+#how to run: python eco_platform.py --design 6502
+
