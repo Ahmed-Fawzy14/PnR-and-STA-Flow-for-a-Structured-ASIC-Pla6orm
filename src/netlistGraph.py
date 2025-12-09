@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-
+#netlistGraph.py
 FOLDER = "./designs"
 OUTPUT = "./build"
 

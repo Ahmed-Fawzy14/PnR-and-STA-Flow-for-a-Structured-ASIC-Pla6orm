@@ -1,4 +1,4 @@
-# generate_db.py
+# dataStructuresGenerator.py
 import json
 import argparse
 import sys
@@ -114,13 +114,31 @@ def build_and_save_structures(netlist_graph_path, logical_db_path, fabric_cells_
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compile raw design files into a single processed JSON.")
+    parser = argparse.ArgumentParser(
+        description="Compile raw design files into a single processed JSON."
+    )
 
-    parser.add_argument("--netlist", required=True, help="Path to mapped_netlist_graph.json")
-    parser.add_argument("--logical", required=True, help="Path to logical_db.json")
-    parser.add_argument("--fabric", required=True, help="Path to fabric_cells.json")
-    parser.add_argument("--output", required=True, help="Path for the output .json file")
+    parser.add_argument(
+        "--design",
+        required=True,
+        help="Design name (e.g., 6502, z80, etc.)"
+    )
 
     args = parser.parse_args()
+    design = args.design
 
-    build_and_save_structures(args.netlist, args.logical, args.fabric, args.output)
+    # Construct paths
+    netlist_path = f"build/{design}/{design}_mapped_netlist_graph.json"
+    logical_path = f"build/{design}/{design}_logical_db.json"
+    fabric_path  = "build/fabric/fabric_db.json"
+    output_path  = f"build/{design}/data_structures.json"
+
+    # Call main builder
+    build_and_save_structures(netlist_path, logical_path, fabric_path, output_path)
+
+
+
+#Example how to run:
+# python src/dataStructuresGenerator.py --design <design>
+
+
