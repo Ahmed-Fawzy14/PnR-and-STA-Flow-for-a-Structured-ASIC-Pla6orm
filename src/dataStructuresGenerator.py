@@ -4,7 +4,6 @@ import argparse
 import sys
 from collections import defaultdict
 
-
 def get_macro_type(full_name):
     """Extracts the logical type from a full Sky130 physical name."""
     if not full_name: return "UNKNOWN"
@@ -18,16 +17,12 @@ def get_macro_type(full_name):
         base_name = cell_part
     return base_name.upper()
 
-
 def build_and_save_structures(netlist_graph_path, logical_db_path, fabric_cells_path, output_json_path):
     print(f"Loading raw files...")
     try:
-        with open(netlist_graph_path, 'r') as f:
-            raw_netlist_graph = json.load(f)
-        with open(logical_db_path, 'r') as f:
-            raw_logical_json = json.load(f)
-        with open(fabric_cells_path, 'r') as f:
-            raw_fabric_json = json.load(f)
+        with open(netlist_graph_path, 'r') as f: raw_netlist_graph = json.load(f)
+        with open(logical_db_path, 'r') as f: raw_logical_json = json.load(f)
+        with open(fabric_cells_path, 'r') as f: raw_fabric_json = json.load(f)
     except FileNotFoundError as e:
         print(f"Error loading files: {e}")
         sys.exit(1)
@@ -69,15 +64,15 @@ def build_and_save_structures(netlist_graph_path, logical_db_path, fabric_cells_
     for inst_name, inst_data in logical_db.items():
         c_type = get_macro_type(inst_data.get("type", ""))
         cell_type[inst_name] = c_type
-
+        
         connected_nets = set()
         pins = inst_data.get("pins", {})
-
+        
         for pin_name, net_list in pins.items():
             for net_id in net_list:
                 connected_nets.add(net_id)
                 net_to_pins[net_id].append((inst_name, pin_name))
-
+        
         inst_to_nets[inst_name] = connected_nets
 
     # Process Ports
@@ -112,10 +107,9 @@ def build_and_save_structures(netlist_graph_path, logical_db_path, fabric_cells_
         json.dump(final_data, f, indent=2)
     print("Done.")
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compile raw design files into a single processed JSON.")
-
+    
     parser.add_argument("--netlist", required=True, help="Path to mapped_netlist_graph.json")
     parser.add_argument("--logical", required=True, help="Path to logical_db.json")
     parser.add_argument("--fabric", required=True, help="Path to fabric_cells.json")
