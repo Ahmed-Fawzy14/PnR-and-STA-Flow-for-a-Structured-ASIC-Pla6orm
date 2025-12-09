@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#generate_verilog.py
 """
 generate_verilog_from_pd_eco.py
 

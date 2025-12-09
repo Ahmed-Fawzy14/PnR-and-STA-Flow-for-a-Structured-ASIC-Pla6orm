@@ -2,3 +2,6 @@
 .venv
 NUL
 .idea/
+
+# Ignore build artifacts
+build/

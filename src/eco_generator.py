@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# eco_generator.py
 import argparse
 import json
 from collections import defaultdict
@@ -223,7 +224,7 @@ def main():
     design = args.design
 
     base_dir = Path("build") / design
-    netlist_graph_path = base_dir / f"{design}_mapped_netlist_graph.json"
+    netlist_graph_path = base_dir / f"{design}_cts_mapped_netlist_graph.json"
     logical_db_path = base_dir / f"{design}_logical_db.json"
     after_graph_path = base_dir / f"{design}_mapped_netlist_graph_after_pd_eco.json"
 

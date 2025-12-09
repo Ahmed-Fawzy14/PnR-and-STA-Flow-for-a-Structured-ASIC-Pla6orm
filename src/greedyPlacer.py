@@ -1,4 +1,4 @@
-# run_placement.py
+# greedyPlacer.py
 import math
 import sys
 import os

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# src/validate_logical_db.py
+# validate_logical_db.py
 #
 # Validate one or more logical_db.json files.
 # - JSON Schema validation (docs/logical_db.schema.json)

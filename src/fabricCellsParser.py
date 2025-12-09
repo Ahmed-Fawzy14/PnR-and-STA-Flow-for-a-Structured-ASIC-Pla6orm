@@ -2,7 +2,7 @@ import yaml
 import json
 from collections import Counter
 from pathlib import Path
-
+#fabricCellsParser.py
 INPUT_FILE = "fabric_cells.yaml"
 FABRIC_DEFINITION = "fabric.yaml"
 OUTPUT_COUNTS = "type_counts.txt"

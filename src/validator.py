@@ -1,3 +1,4 @@
+# validator.py
 """
 Design Validator Module (Phase 1)
 
