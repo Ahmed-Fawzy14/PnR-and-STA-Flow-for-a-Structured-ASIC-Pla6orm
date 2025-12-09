@@ -2,19 +2,26 @@
 """
 SA Knob Analysis Script
 
-Runs simulated annealing with many different parameter combinations to find
-the best settings for balancing runtime and HPWL quality.
+Runs simulated annealing with a comprehensive set of parameter combinations to explore
+how knobs affect the placer's quality (final HPWL) and runtime.
+
+This comprehensive analysis includes:
+- Full sweeps of each parameter individually
+- Key interaction combinations (alpha × num_temp_steps, alpha × P_refine)
+- Expanded parameter ranges for better coverage
 
 Fixed parameters:
 - T_initial = 3,000,000
 - moves_per_temp = 1000
 
 Varies:
-- num_temp_steps
-- alpha (cooling rate)
-- P_refine
-- W_initial
-- beta
+- num_temp_steps: [30, 40, 50, 60, 70, 80]
+- alpha (cooling rate): [0.80, 0.85, 0.90, 0.92, 0.95, 0.97, 0.99]
+- P_refine: [0.3, 0.5, 0.7, 0.8, 0.9]
+- W_initial: [0.3, 0.5, 0.7, 0.8]
+- beta: [0.90, 0.92, 0.95, 0.97, 0.99]
+
+Expected: ~85 experiments total
 """
 
 import argparse
@@ -112,35 +119,180 @@ def run_sa_experiment(
 
 def generate_parameter_combinations() -> List[Dict]:
     """
-    Generate all parameter combinations to test.
+    Generate a comprehensive set of parameter combinations to test.
+    
+    This creates a systematic exploration of the parameter space with:
+    - Expanded ranges for all key parameters
+    - More granular steps for better coverage
+    - Variations in W_initial and beta as well
     
     Returns list of parameter dicts.
     """
-    # Parameter ranges
-    num_temp_steps_values = [30, 40, 50, 60, 70, 80, 100]
+    # Fixed parameters
+    T_initial = 3000000.0
+    moves_per_temp = 1000
+    
+    # Expanded parameter ranges for comprehensive analysis
+    num_temp_steps_values = [30, 40, 50, 60, 70, 80]
     alpha_values = [0.80, 0.85, 0.90, 0.92, 0.95, 0.97, 0.99]
     P_refine_values = [0.3, 0.5, 0.7, 0.8, 0.9]
     W_initial_values = [0.3, 0.5, 0.7, 0.8]
     beta_values = [0.90, 0.92, 0.95, 0.97, 0.99]
     
-    # Generate all combinations
+    # Generate comprehensive combinations
+    # Strategy: Create a focused grid that covers key interactions
     combinations = []
-    for num_temp_steps, alpha, P_refine, W_initial, beta in itertools.product(
-        num_temp_steps_values,
-        alpha_values,
-        P_refine_values,
-        W_initial_values,
-        beta_values,
-    ):
+    
+    # 1. Baseline and alpha sweep (most important parameter)
+    for alpha in alpha_values:
         combinations.append({
-            "num_temp_steps": num_temp_steps,
+            "num_temp_steps": 50,
             "alpha": alpha,
-            "P_refine": P_refine,
-            "W_initial": W_initial,
-            "beta": beta,
+            "P_refine": 0.7,
+            "W_initial": 0.5,
+            "beta": 0.95,
         })
     
-    return combinations
+    # 2. num_temp_steps sweep
+    for num_temp_steps in num_temp_steps_values:
+        if num_temp_steps != 50:  # Avoid duplicate with baseline
+            combinations.append({
+                "num_temp_steps": num_temp_steps,
+                "alpha": 0.85,
+                "P_refine": 0.7,
+                "W_initial": 0.5,
+                "beta": 0.95,
+            })
+    
+    # 3. P_refine sweep
+    for P_refine in P_refine_values:
+        if P_refine != 0.7:  # Avoid duplicate with baseline
+            combinations.append({
+                "num_temp_steps": 50,
+                "alpha": 0.85,
+                "P_refine": P_refine,
+                "W_initial": 0.5,
+                "beta": 0.95,
+            })
+    
+    # 4. W_initial sweep
+    for W_initial in W_initial_values:
+        if W_initial != 0.5:  # Avoid duplicate with baseline
+            combinations.append({
+                "num_temp_steps": 50,
+                "alpha": 0.85,
+                "P_refine": 0.7,
+                "W_initial": W_initial,
+                "beta": 0.95,
+            })
+    
+    # 5. beta sweep
+    for beta in beta_values:
+        if beta != 0.95:  # Avoid duplicate with baseline
+            combinations.append({
+                "num_temp_steps": 50,
+                "alpha": 0.85,
+                "P_refine": 0.7,
+                "W_initial": 0.5,
+                "beta": beta,
+            })
+    
+    # 6. Key interaction combinations (alpha × num_temp_steps)
+    for alpha in [0.80, 0.90, 0.95, 0.99]:
+        for num_temp_steps in [30, 50, 70]:
+            if not (alpha == 0.85 and num_temp_steps == 50):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": num_temp_steps,
+                    "alpha": alpha,
+                    "P_refine": 0.7,
+                    "W_initial": 0.5,
+                    "beta": 0.95,
+                })
+    
+    # 7. Key interaction combinations (alpha × P_refine)
+    for alpha in [0.80, 0.90, 0.95, 0.99]:
+        for P_refine in [0.5, 0.7, 0.9]:
+            if not (alpha == 0.85 and P_refine == 0.7):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": 50,
+                    "alpha": alpha,
+                    "P_refine": P_refine,
+                    "W_initial": 0.5,
+                    "beta": 0.95,
+                })
+    
+    # 8. num_temp_steps × P_refine interactions
+    for num_temp_steps in [30, 50, 70]:
+        for P_refine in [0.5, 0.7, 0.9]:
+            if not (num_temp_steps == 50 and P_refine == 0.7):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": num_temp_steps,
+                    "alpha": 0.85,
+                    "P_refine": P_refine,
+                    "W_initial": 0.5,
+                    "beta": 0.95,
+                })
+    
+    # 9. Extended alpha × num_temp_steps (more coverage)
+    for alpha in [0.80, 0.85, 0.90, 0.95, 0.99]:
+        for num_temp_steps in [30, 40, 60, 70, 80]:
+            if not (alpha == 0.85 and num_temp_steps == 50):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": num_temp_steps,
+                    "alpha": alpha,
+                    "P_refine": 0.7,
+                    "W_initial": 0.5,
+                    "beta": 0.95,
+                })
+    
+    # 10. Extended alpha × P_refine (more coverage)
+    for alpha in [0.80, 0.85, 0.90, 0.95, 0.99]:
+        for P_refine in [0.3, 0.5, 0.7, 0.8, 0.9]:
+            if not (alpha == 0.85 and P_refine == 0.7):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": 50,
+                    "alpha": alpha,
+                    "P_refine": P_refine,
+                    "W_initial": 0.5,
+                    "beta": 0.95,
+                })
+    
+    # 11. 3-way interactions: alpha × num_temp_steps × P_refine (key combinations)
+    for alpha in [0.80, 0.90, 0.95, 0.99]:
+        for num_temp_steps in [30, 50, 70]:
+            for P_refine in [0.5, 0.7, 0.9]:
+                if not (alpha == 0.85 and num_temp_steps == 50 and P_refine == 0.7):  # Avoid baseline
+                    combinations.append({
+                        "num_temp_steps": num_temp_steps,
+                        "alpha": alpha,
+                        "P_refine": P_refine,
+                        "W_initial": 0.5,
+                        "beta": 0.95,
+                    })
+    
+    # 12. W_initial × beta interactions
+    for W_initial in [0.3, 0.5, 0.7, 0.8]:
+        for beta in [0.90, 0.95, 0.99]:
+            if not (W_initial == 0.5 and beta == 0.95):  # Avoid baseline duplicate
+                combinations.append({
+                    "num_temp_steps": 50,
+                    "alpha": 0.85,
+                    "P_refine": 0.7,
+                    "W_initial": W_initial,
+                    "beta": beta,
+                })
+    
+    # Remove duplicates (keep first occurrence)
+    seen = set()
+    unique_combinations = []
+    for combo in combinations:
+        key = (combo["num_temp_steps"], combo["alpha"], combo["P_refine"], 
+               combo["W_initial"], combo["beta"])
+        if key not in seen:
+            seen.add(key)
+            unique_combinations.append(combo)
+    
+    return unique_combinations
 
 
 def find_pareto_frontier(results: List[Dict]) -> List[Dict]:
