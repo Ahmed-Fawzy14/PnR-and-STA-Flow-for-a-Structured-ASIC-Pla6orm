@@ -1,4 +1,4 @@
-# generate_db.py
+# dataStructuresGenerator.py
 import json
 import argparse
 import sys

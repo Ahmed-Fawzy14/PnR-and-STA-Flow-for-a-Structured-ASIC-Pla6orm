@@ -1,4 +1,4 @@
-# run_placement.py
+# greedyPlacer.py
 import math
 import sys
 import os
@@ -22,22 +22,60 @@ class GreedyPlacer:
             sys.exit(1)
 
         # Unpack structures
-        self.logical_db = self.data["logical_db"]
-        self.fabric_db = self.data["fabric_db"]
-        self.slot_coords = self.data["slot_coords"]
-        self.slot_type = self.data["slot_type"]
-        self.slots_by_type = self.data["slots_by_type"]
-        self.cell_type = self.data["cell_type"]
-        self.net_to_pins = self.data["net_to_pins"]
-        self.pin_coords = self.data["pin_coords"]
+        if "logical_db" in self.data:
+            self.logical_db = self.data["logical_db"]
+            self.fabric_db = self.data["fabric_db"]
+            self.slot_coords = self.data["slot_coords"]
+            self.slot_type = self.data["slot_type"]
+            self.slots_by_type = self.data["slots_by_type"]
+            self.cell_type = self.data["cell_type"]
+            self.net_to_pins = self.data["net_to_pins"]
+            self.pin_coords = self.data["pin_coords"]
 
-        # RECONSTRUCT SETS from Lists
-        self.inst_to_nets = {k: set(v) for k, v in self.data["inst_to_nets"].items()}
+            # RECONSTRUCT SETS from Lists
+            self.inst_to_nets = {k: set(v) for k, v in self.data["inst_to_nets"].items()}
+        else:
+            self._normalize_data()
 
         # Initialize State
         self.placement = {}  # instance_name -> slot_name
         self.occupied_slots = set()
         self.unplaced_instances = set(self.logical_db.keys())
+
+    def _normalize_data(self):
+        print("Adapting data structure from new format...")
+        self.logical_db = self.data["logical"]["instances"]
+
+        # Fabric
+        self.slot_coords = {}
+        self.slot_type = {}
+        for name, info in self.data["fabric"]["slot_info"].items():
+            self.slot_coords[name] = (info["x"], info["y"])
+            self.slot_type[name] = info["physical_cell_type"]
+
+        self.slots_by_type = self.data["fabric"]["slots_by_phys_type"]
+        self.cell_type = self.data["logical"]["cell_type"]
+
+        # Nets
+        self.net_to_pins = {}
+        self.inst_to_nets = defaultdict(set)
+
+        net_graph = self.data["nets"].get("net_graph", {})
+        for net_id, info in net_graph.items():
+            pins = []
+            # Drivers
+            for inst, pin in info.get("drivers", []):
+                pins.append((inst, pin))
+                self.inst_to_nets[inst].add(net_id)
+            # Sinks
+            for inst, pin in info.get("sinks", []):
+                pins.append((inst, pin))
+                self.inst_to_nets[inst].add(net_id)
+
+            self.net_to_pins[net_id] = pins
+
+        # Pin Coords - Missing in new format, defaulting to empty
+        self.pin_coords = {}
 
     def get_distance(self, x1, y1, x2, y2):
         return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
@@ -74,7 +112,7 @@ class GreedyPlacer:
             print(f"WARNING: No '{c_type}' slots for {inst_name}")
             return False
 
-    def run_seed_placement(self):
+    def run_seed_placement(self, callback=None):
         """Phase 1: Place cells connected to I/Os."""
         print("Running Seed Placement (I/O Driven)...")
         count = 0
@@ -112,10 +150,12 @@ class GreedyPlacer:
             if inst_name in self.unplaced_instances:
                 if self.place_instance(inst_name, x, y):
                     count += 1
+                    if callback:
+                        callback(self)
 
         print(f"  -> Placed {count} seed instances.")
 
-    def run_grow_placement(self):
+    def run_grow_placement(self, callback=None):
         """Phase 2: Place remaining cells based on connectivity."""
         print("Running Grow Placement (Connectivity Driven)...")
 
@@ -148,6 +188,8 @@ class GreedyPlacer:
             if self.place_instance(best_inst, target_x, target_y):
                 count += 1
                 self._update_neighbors(best_inst, connectivity_scores, pq)
+                if callback:
+                    callback(self)
             else:
                 self.unplaced_instances.remove(best_inst)
 
