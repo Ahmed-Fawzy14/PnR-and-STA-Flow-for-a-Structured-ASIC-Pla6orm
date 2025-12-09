@@ -13,7 +13,7 @@ if { [info exists ::env(DESIGN_NAME)] } {
 
 # Define directory paths
 set build_dir "build/${design_name}"
-set platform_dir "." 
+set platform_dir "tech" 
 
 puts "--- Starting Routing for Design: $design_name ---"
 
