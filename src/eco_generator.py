@@ -340,7 +340,7 @@ def run_cts(
 
     map_file = design_build / f"{design}_sa.map"
     logical_db_file = design_build / f"{design}_logical_db.json"
-    fabric_db_file = build_root / "fabric" / "fabric_db.json"
+    fabric_db_file = build_root / "fabric" / "cells_by_type.json"
     output_map_file = design_build / f"{design}_cts.map"
     cts_info_file = design_build / f"{design}_cts.json"
     mapped_json_file = designs_root / f"{design}_mapped.json"

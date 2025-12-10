@@ -1,8 +1,8 @@
+#fabricCellsParser.py
 import yaml
 import json
 from collections import Counter
 from pathlib import Path
-#fabricCellsParser.py
 INPUT_FILE = "fabric_cells.yaml"
 FABRIC_DEFINITION = "fabric.yaml"
 OUTPUT_COUNTS = "type_counts.txt"
@@ -66,7 +66,8 @@ def parse_fabric(file_path, template_map):
             "name": tile_name,
             "x": tile_details.get("x"),
             "y": tile_details.get("y"),
-            "cells": []     # renamed from 'gates' to 'cells'
+            "cells": [],     # new name
+            "gates": []      # old name, used by visualize.py
         }
 
         cells = tile_details.get("cells", [])
@@ -98,19 +99,23 @@ def parse_fabric(file_path, template_map):
             else:
                 print(f"    ⚠ No cell type for template: {template_name}")
 
-            tile_entry["cells"].append({
+            cell_obj = {
                 "name": cell_name,
                 "physical_cell_type": physical_cell_type,
                 "width_sites": info.get("width_sites"),
                 "x": cell.get("x"),
                 "y": cell.get("y"),
                 "orient": cell.get("orient")
-            })
+            }
+
+            tile_entry["cells"].append(cell_obj)
+            tile_entry["gates"].append(cell_obj)
 
         structured_json["tiles"].append(tile_entry)
 
     print("\n--- Finished parsing ---\n")
     return type_counter, structured_json
+
 
 
 if __name__ == "__main__":

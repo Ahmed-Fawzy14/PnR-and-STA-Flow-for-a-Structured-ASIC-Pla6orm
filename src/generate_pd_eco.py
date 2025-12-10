@@ -293,7 +293,7 @@ def main():
 
     base_dir = Path("build") / design
 
-    fabric_path = Path(args.fabric) if args.fabric else Path("build") / "fabric" / "fabric_db.json"
+    fabric_path = Path(args.fabric) if args.fabric else Path("build") / "fabric" / "cells_by_type.json"
     map_path = Path(args.map) if args.map else base_dir / f"{design}_sa.map"
     unused_path = Path(args.unused) if args.unused else base_dir / f"{design}_pd_unused_instances.json"
     tie_info_path = Path(args.tieinfo) if args.tieinfo else base_dir / f"{design}_pd_tielo_source.json"

@@ -127,8 +127,8 @@ def main() -> None:
     base_dir = os.path.join("build", design)
     netlist_path = os.path.join(base_dir, f"{design}_mapped_netlist_graph.json")
     logical_path = os.path.join(base_dir, f"{design}_logical_db.json")
-    fabric_path = os.path.join("build", "fabric", "fabric_db.json")
-    fabric_path_greedy = os.path.join("build", "fabric", "fabric_db_o.json")
+    fabric_path = os.path.join("build", "fabric", "cells_by_type.json")
+    fabric_path_greedy = os.path.join("build", "fabric", "fabric_db.json")
 
 
     # Files that match your existing scripts’ expectations

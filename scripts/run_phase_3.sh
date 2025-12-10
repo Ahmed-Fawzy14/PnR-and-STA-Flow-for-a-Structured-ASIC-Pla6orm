@@ -65,7 +65,7 @@ python src/animated_eco_pd.py \
 echo
 echo "[5/5] Running visualize_cts.py (CTS visualization)..."
 python src/visualize_cts.py \
-  --fabric "build/fabric/fabric_db_o.json" \
+  --fabric "build/fabric/fabric_db.json" \
   --map "build/${DESIGN}/${DESIGN}_sa.map" \
   --old_netlist "build/${DESIGN}/${DESIGN}_mapped_netlist_graph.json" \
   --new_netlist "build/${DESIGN}/${DESIGN}_cts_mapped_netlist_graph.json" \

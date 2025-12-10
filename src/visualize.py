@@ -1,4 +1,3 @@
-# visualize.py
 import argparse, json, os
 from collections import Counter
 from typing import Any, Dict, List, Tuple
@@ -50,30 +49,48 @@ def collect_slots(fab: Dict[str, Any], default_w: float, default_h: float) -> Li
     slots: List[Dict[str, Any]] = []
 
     for t in fab.get("tiles", []):
-        for g in t.get("gates", []):
+        # Support both legacy "gates" and newer "cells" key
+        gate_list = t.get("gates")
+        if gate_list is None:
+            gate_list = t.get("cells", [])
+        # (Optional) also support a top-level "cells" someday if needed
+        # if not gate_list and "cells" in fab: gate_list = fab["cells"]
+
+        for g in gate_list:
+            # width in sites -> width in µm
             w_sites = g.get("width_sites", None)
             if w_sites is not None:
                 w_um = float(w_sites) * site_w_um
             else:
-                w_um = float(g.get("w", default_w))
+                # Fallbacks:
+                # - prefer explicit width fields if present
+                # - otherwise, use default single-site width
+                w_um = float(
+                    g.get("w_um",
+                          g.get("w", default_w))
+                )
 
             # prefer single-row height = site_h_um
-            h_um = float(site_h_um) if site_h_um is not None else float(g.get("h", default_h))
+            h_um = float(site_h_um if site_h_um is not None else default_h)
 
-            x_um = float(g.get("x", g.get("x_um", 0.0)))
-            y_um = float(g.get("y", g.get("y_um", 0.0)))
+            x_um = float(g.get("x_um", g.get("x", 0.0)))
+            y_um = float(g.get("y_um", g.get("y", 0.0)))
 
             slots.append({
                 "name": g.get("name", ""),
-                "type": g.get("type","UNK"),
-                "x": x_um, "y": y_um, "w": w_um, "h": h_um,
+                # If "type" is missing (like in your new DB), we still get something
+                "type": g.get("type", g.get("physical_cell_type", "UNK")),
+                "x": x_um,
+                "y": y_um,
+                "w": w_um,
+                "h": h_um,
                 "width_sites": w_sites,
                 "physical_cell_type": g.get("physical_cell_type", None),
                 "orient": g.get("orient", None),
             })
 
     if not slots:
-        raise ValueError("No gates found (tiles[*].gates is empty).")
+        raise ValueError("No gates/cells found (tiles[*].gates / tiles[*].cells is empty).")
     return slots
 
 def infer_die_core_from_slots(slots: List[Dict[str, Any]], margin_um: float = 5.0):
@@ -177,20 +194,39 @@ def parse_pins(fab: Dict[str, Any], die_um: Dict[str, Any]) -> List[Dict[str, An
 def compute_tile_boxes(fab: Dict[str, Any]):
     boxes = {}
     for t in fab.get("tiles", []):
+        # Support both "gates" and "cells"
+        gate_list = t.get("gates")
+        if gate_list is None:
+            gate_list = t.get("cells", [])
+
         xs, ys, xes, yes = [], [], [], []
-        for g in t.get("gates", []):
-            x = float(g.get("x", g.get("x_um", 0.0)))
-            y = float(g.get("y", g.get("y_um", 0.0)))
+        for g in gate_list:
+            x = float(g.get("x_um", g.get("x", 0.0)))
+            y = float(g.get("y_um", g.get("y", 0.0)))
+
             fi_w, fi_h = get_site_dims_um(fab, 0.46, 2.72)
-            if g.get("width_sites", None) is not None:
-                w_um = float(g["width_sites"]) * fi_w
+
+            w_sites = g.get("width_sites", None)
+            if w_sites is not None:
+                w_um = float(w_sites) * fi_w
             else:
-                w_um = float(g.get("w", fi_w))
+                w_um = float(
+                    g.get("w_um",
+                          g.get("w", fi_w))
+                )
+
             h_um = float(fi_h)
-            xs.append(x); ys.append(y)
-            xes.append(x + w_um); yes.append(y + h_um)
+
+            xs.append(x)
+            ys.append(y)
+            xes.append(x + w_um)
+            yes.append(y + h_um)
+
         if xs and ys:
-            boxes[t.get("name","")] = (min(xs), min(ys), max(xes), max(yes))
+            boxes[t.get("name", "")] = (
+                min(xs), min(ys),
+                max(xes), max(yes)
+            )
     return boxes
 
 #  Scaling 

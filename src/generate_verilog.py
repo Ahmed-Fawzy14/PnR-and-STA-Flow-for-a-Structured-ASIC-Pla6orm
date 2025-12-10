@@ -320,7 +320,7 @@ def generate_verilog(
     # -----------------------------
     port_names = list(ports.keys())
 
-    lines.append(f"module {design} (")
+    lines.append(f"module mod_{design} (")
     if port_names:
         # One port per line for readability
         for i, pname in enumerate(port_names):

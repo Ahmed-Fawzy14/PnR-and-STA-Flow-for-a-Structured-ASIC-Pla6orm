@@ -40,7 +40,7 @@ echo "[2/3] Running greedyPlacementVisualization.py..."
 python src/greedyPlacementVisualization.py \
   --design "${DESIGN}" \
   --data "build/${DESIGN}/data_structures.json" \
-  --fabric "build/fabric/fabric_db_o.json"
+  --fabric "build/fabric/fabric_db.json"
 
 
 
@@ -63,5 +63,5 @@ python src/visualize_graphs.py \
 
 echo
 echo "========================================"
-echo " Placement flow completed for design: ${DESIGN}"
+echo " Placement flow completed for design (phase 2): ${DESIGN}"
 echo "========================================"

@@ -339,7 +339,7 @@ def main():
         sys.exit(1)
     
     # Construct file paths
-    fabric_db_path = "../build/fabric/fabric_db.json"
+    fabric_db_path = "build/fabric/cells_by_type.json"
     logical_db_path = f"build/{design_name}/{design_name}_logical_db.json"
     
     try:
