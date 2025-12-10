@@ -15,7 +15,7 @@ read_lef "${platform_dir}/sky130_macros.lef"
 read_liberty "${platform_dir}/sky130_fd_sc_hd__tt_025C_1v80.lib"
 
 read_verilog "${build_dir}/${design_name}_renamed.v"
-link_design ${design_name}
+link_design "mod_${design_name}"
 
 read_def -floorplan_initialize "${build_dir}/${design_name}_fixed.def"
 
@@ -34,4 +34,4 @@ extract_parasitics -ext_model_file "${platform_dir}/rcx_patterns.rules"
 
 write_spef "${build_dir}/${design_name}.spef"
 
-read_def -floorplan_initialize "${build_dir}/${design_name}_fixed.def"
+write_def "${build_dir}/${design_name}_routed.def"
