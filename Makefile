@@ -1,216 +1,275 @@
-# Makefile for PnR + PD-ECO + Verilog + Visualization flow
+SHELL  := /usr/bin/env bash
+PYTHON := python
 
-PYTHON      ?= python3
-SRC_DIR     := src
-BUILD_DIR   := build
-FABRIC_DIR  := $(BUILD_DIR)/fabric
+# ---------------------------------------------------------
+# Design + paths
+# ---------------------------------------------------------
+DESIGN ?= 6502
 
-# --------- Top-level design (override on command line) ----------
-DESIGN      ?= 6502
+BUILD_DIR     := build/$(DESIGN)
+FABRIC_DB     := build/fabric/fabric_db.json
+MAPPED_JSON   := designs/$(DESIGN)_mapped.json
+MAP_FILE      := $(BUILD_DIR)/$(DESIGN).map
+FINAL_NETLIST := $(BUILD_DIR)/$(DESIGN)_final.v
 
-# --------- Key files for this design ----------
-# Yosys mapped JSON lives under designs/
-MAPPED_JSON      := designs/$(DESIGN)_mapped.json          # INPUT – must exist
-LOGICAL_DB       := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_logical_db.json
-NETLIST_GRAPH    := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_mapped_netlist_graph.json
+RENAMED_NET   := $(BUILD_DIR)/$(DESIGN)_renamed.v
+FIXED_DEF     := $(BUILD_DIR)/$(DESIGN)_fixed.def
+SPEF_FILE     := $(BUILD_DIR)/$(DESIGN).spef
 
-# Greedy / ECO / Verilog data structures
-DS_GREEDY        := $(BUILD_DIR)/$(DESIGN)/data_structures.json
+SDC_SRC       :=  tech/design.sdc
+SDC_BUILD     := $(BUILD_DIR)/$(DESIGN).sdc
 
-# Greedy + SA maps
-GREEDY_MAP       := $(BUILD_DIR)/$(DESIGN)/$(DESIGN).map
-SA_DS            := $(BUILD_DIR)/$(DESIGN)/sa_data_structures.json
-SA_MAP           := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_sa.map
+STA_SETUP_RPT := $(BUILD_DIR)/$(DESIGN)_setup.rpt
 
-# ECO outputs
-ECO_GRAPH        := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_mapped_netlist_graph_after_pd_eco.json
-ECO_UNUSED       := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_pd_unused_instances.json
-ECO_TIEINFO      := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_pd_tielo_source.json
-ECO_REPORT       := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_power_down_eco_report.txt
+ROUTE_TCL     := src/route.tcl
+STA_TCL       := src/sta.tcl
 
-# Verilog outputs
-VERILOG_PD       := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_pd_eco_netlist.v
-VERILOG_RENAMED  := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_renamed.v
+VALIDATE_STAMP := $(BUILD_DIR)/.validate.ok
+DEPS_FILE := requirements.txt
 
-# Fabric (with pins merged in)
-FABRIC_DB        := $(FABRIC_DIR)/fabric_db.json
+PHASE1_SCRIPTS := \
+    src/fabric_cells_parser.py \
+    src/fabric_cells_by_type.py \
+    src/parse_design.py \
+    src/netlistGraph.py \
+    src/validator.py \
+    src/visualize.py
 
-# Visualization
-PD_PLOT          := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_pd_eco_plot.png
-PD_GIF           := $(BUILD_DIR)/$(DESIGN)/$(DESIGN)_pd_eco_anim.gif
+PLACER_SCRIPTS := \
+    src/placer.py \
+    src/greedyPlacementVisualization.py \
+    src/visualize_graphs.py
 
-# SA knobs (can be overridden)
-SA_NUM_TEMP_STEPS ?= 60
-SA_MOVES_PER_TEMP ?= 1000
-SA_T_INITIAL      ?= 200.0
-SA_ALPHA          ?= 0.95
-SA_P_REFINE       ?= 0.7
-SA_W_INITIAL      ?= 0.5
-SA_BETA           ?= 0.95
+ECO_SCRIPTS := \
+    src/eco_generator.py \
+    src/generate_verilog.py \
+    src/generate_pd_eco.py \
+    src/animated_eco_pd.py \
+    src/visualize_cts.py
 
-.PHONY: all flow place sa eco verilog rename visualize fabric logical clean
+.PHONY: all deps validate place eco route sta clean
 
-# Default: run the whole flow up to renamed Verilog + static ECO plot
-all: flow
+# ---------------------------------------------------------
+# all: full flow through STA
+# ---------------------------------------------------------
+all: sta
 
-flow: $(VERILOG_RENAMED) $(PD_PLOT)
+# ---------------------------------------------------------
+# deps: pip install
+# ---------------------------------------------------------
+deps:
+	@echo "=== Installing Python dependencies (if $(DEPS_FILE) exists) ==="
+	@if [ -f "$(DEPS_FILE)" ]; then \
+		$(PYTHON) -m pip install -r "$(DEPS_FILE)"; \
+	else \
+		echo "No $(DEPS_FILE) found; please install dependencies manually."; \
+	fi
 
-# ----------------------------------------------------------------------
-# Fabric + pins → build/fabric/fabric_db.json
-# ----------------------------------------------------------------------
-$(FABRIC_DB): fabric_cells.yaml fabric.yaml pins.yaml \
-              $(SRC_DIR)/fabricCellsParser.py $(SRC_DIR)/pins_parser.py
-	@echo "=== Building fabric_db.json (fabric + pins) ==="
-	mkdir -p $(FABRIC_DIR)
-	$(PYTHON) $(SRC_DIR)/fabricCellsParser.py
-	$(PYTHON) $(SRC_DIR)/pins_parser.py
-	# fabricCellsParser + pins_parser write 'fabric_cells.json' in CWD
-	mv fabric_cells.json $(FABRIC_DB)
+# ---------------------------------------------------------
+# Phase 1: validate
+# ---------------------------------------------------------
+validate: $(VALIDATE_STAMP)
 
-fabric: $(FABRIC_DB)
+$(VALIDATE_STAMP): $(MAPPED_JSON) $(PHASE1_SCRIPTS)
+	@mkdir -p "$(BUILD_DIR)"
 
-# ----------------------------------------------------------------------
-# Logical DB from mapped JSON
-#   INPUT: designs/<design>_mapped.json  (from Yosys)
-# ----------------------------------------------------------------------
-$(LOGICAL_DB): $(MAPPED_JSON) $(SRC_DIR)/parse_design.py
-	@echo "=== Building logical_db for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/parse_design.py \
-	    --mapped-json $< \
-	    --design $(DESIGN) \
-	    --outdir $(BUILD_DIR)
+	@echo "========================================"
+	@echo " Phase 1 flow"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@echo
 
-logical: $(LOGICAL_DB)
+	@echo "[1/6] Running fabric_cells_parser.py..."
+	@$(PYTHON) src/fabric_cells_parser.py
 
-# ----------------------------------------------------------------------
-# Netlist graph (driver -> sinks) for ECO + dataStructuresGenerator
-#   netlistGraph.py scans ./designs and writes ./build/<name>_netlist_graph.json
-# ----------------------------------------------------------------------
-$(NETLIST_GRAPH): $(MAPPED_JSON) $(SRC_DIR)/netlistGraph.py
-	@echo "=== Building driver→sinks netlist graph for $(DESIGN) ==="
-	mkdir -p $(BUILD_DIR)/$(DESIGN)
-	$(PYTHON) $(SRC_DIR)/netlistGraph.py
-	mv $(BUILD_DIR)/$(DESIGN)_mapped_netlist_graph.json $(NETLIST_GRAPH)
+	@echo
+	@echo "[2/6] Running fabric_cells_by_type.py..."
+	@$(PYTHON) src/fabric_cells_by_type.py
 
-# ----------------------------------------------------------------------
-# data_structures.json for Greedy + ECO + Verilog
-#   dataStructuresGenerator.py expects:
-#     build/<design>/<design>_mapped_netlist_graph.json
-#     build/<design>/<design>_logical_db.json
-#     build/fabric/fabric_db.json
-#   and writes build/<design>/data_structures.json
-# ----------------------------------------------------------------------
-$(DS_GREEDY): $(NETLIST_GRAPH) $(LOGICAL_DB) $(FABRIC_DB) $(SRC_DIR)/dataStructuresGenerator.py
-	@echo "=== Building greedy/ECO data_structures.json for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/dataStructuresGenerator.py --design $(DESIGN)
+	@echo
+	@echo "[3/6] Running parse_design.py..."
+	@$(PYTHON) src/parse_design.py \
+	  --mapped-json "designs/$(DESIGN)_mapped.json" \
+	  --design "$(DESIGN)" \
+	  --outdir "build"
 
-# ----------------------------------------------------------------------
-# Greedy placement
-# ----------------------------------------------------------------------
-$(GREEDY_MAP): $(DS_GREEDY) $(SRC_DIR)/greedyPlacer.py
-	@echo "=== Running Greedy placer for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/greedyPlacer.py \
-	    --design $(DESIGN) \
-	    --data $(DS_GREEDY) \
-	    --output $@
+	@echo
+	@echo "[4/6] Running netlistGraph.py..."
+	@$(PYTHON) src/netlistGraph.py --design "$(DESIGN)"
 
-place: $(GREEDY_MAP)
+	@echo
+	@echo "[5/6] Running validator.py..."
+	@$(PYTHON) src/validator.py "$(DESIGN)"
 
-# ----------------------------------------------------------------------
-# SA data structures (separate JSON so we don't clash with greedy one)
-# ----------------------------------------------------------------------
-$(SA_DS): $(LOGICAL_DB) $(FABRIC_DB) $(SRC_DIR)/dataStructuresGenerator_SA.py
-	@echo "=== Building SA data_structures for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/dataStructuresGenerator_SA.py \
-	    --logical-db $(LOGICAL_DB) \
-	    --fabric-db $(FABRIC_DB) \
-	    --out-json $@
+	@echo
+	@echo "[6/6] Running visualize.py..."
+	@$(PYTHON) src/visualize.py \
+	  --fabric-db "$(FABRIC_DB)" \
+	  --out "build/fabric/fabric_layout.png"
 
-# ----------------------------------------------------------------------
-# Simulated Annealing placer (uses SA_DS + greedy map as initial)
-# ----------------------------------------------------------------------
-$(SA_MAP): $(SA_DS) $(GREEDY_MAP) $(SRC_DIR)/simulated_annealing.py
-	@echo "=== Running Simulated Annealing for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/simulated_annealing.py \
-	    --data-structures $(SA_DS) \
-	    --initial-map $(GREEDY_MAP) \
-	    --out-map $@ \
-	    --num-temp-steps $(SA_NUM_TEMP_STEPS) \
-	    --moves-per-temp $(SA_MOVES_PER_TEMP) \
-	    --T-initial $(SA_T_INITIAL) \
-	    --alpha $(SA_ALPHA) \
-	    --P-refine $(SA_P_REFINE) \
-	    --W-initial $(SA_W_INITIAL) \
-	    --beta $(SA_BETA)
+	@echo
+	@echo "========================================"
+	@echo " Phase 1 flow completed for design: $(DESIGN)"
+	@echo "========================================"
 
-sa: $(SA_MAP)
+	@touch "$@"
 
-# ----------------------------------------------------------------------
-# ECO: tie unused cells to conb_1.LO (eco_generator.py)
-# ----------------------------------------------------------------------
-$(ECO_GRAPH): $(NETLIST_GRAPH) $(LOGICAL_DB) $(SRC_DIR)/eco_generator.py
-	@echo "=== Running PD ECO for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/eco_generator.py --design $(DESIGN)
+# ---------------------------------------------------------
+# Phase 2: place
+# ---------------------------------------------------------
+place: $(MAP_FILE)
 
-$(ECO_UNUSED) $(ECO_TIEINFO) $(ECO_REPORT): $(ECO_GRAPH)
-	@true
+$(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
+	@mkdir -p "$(BUILD_DIR)"
 
-eco: $(ECO_GRAPH)
+	@echo "========================================"
+	@echo " Phase 2 (Placement) flow"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@echo
 
-# ----------------------------------------------------------------------
-# Gate-level Verilog with PD-ECO applied
-# ----------------------------------------------------------------------
-$(VERILOG_PD): $(DS_GREEDY) $(ECO_GRAPH) $(SRC_DIR)/generate_verilog.py
-	@echo "=== Generating PD-ECO Verilog netlist for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/generate_verilog.py --design $(DESIGN)
+	@echo "[1/3] Running placer.py (greedy + SA)..."
+	@$(PYTHON) src/placer.py --design "$(DESIGN)"
 
-verilog: $(VERILOG_PD)
+	@echo
+	@echo "[2/3] Running greedyPlacementVisualization.py..."
+	@$(PYTHON) src/greedyPlacementVisualization.py \
+	  --design "$(DESIGN)" \
+	  --data "build/$(DESIGN)/data_structures.json" \
+	  --fabric "$(FABRIC_DB)"
 
-# ----------------------------------------------------------------------
-# Rename instances in Verilog to match SA placement slots (rename.py)
-# ----------------------------------------------------------------------
-$(VERILOG_RENAMED): $(VERILOG_PD) $(SA_MAP) $(SRC_DIR)/rename.py
-	@echo "=== Renaming instances in Verilog to match SA map for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/rename.py \
-	    --design $(DESIGN) \
-	    --map $(SA_MAP) \
-	    --in-verilog $(VERILOG_PD) \
-	    --out-verilog $@
+	@echo
+	@echo "[3/3] Running visualize_graphs.py (density + net HPWL hist)..."
+	@$(PYTHON) src/visualize_graphs.py \
+	  --data-structures "build/$(DESIGN)/data_structures_sa.json" \
+	  --placement-map   "$(MAP_FILE)" \
+	  --design-name     "$(DESIGN)" \
+	  --out-density     "build/$(DESIGN)/$(DESIGN)_density.png" \
+	  --out-net-length  "build/$(DESIGN)/$(DESIGN)_net_length_hist.png"
 
-rename: $(VERILOG_RENAMED)
+	@echo
+	@echo "========================================"
+	@echo " Placement flow completed for design: $(DESIGN)"
+	@echo "========================================"
 
-# ----------------------------------------------------------------------
-# Visualization: static PD-ECO scatter + animated GIF
-# ----------------------------------------------------------------------
-$(PD_PLOT): $(FABRIC_DB) $(SA_MAP) $(ECO_UNUSED) $(ECO_TIEINFO) $(DS_GREEDY) $(SRC_DIR)/animated_eco_pd.py
-	@echo "=== Generating static PD-ECO plot for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/animated_eco_pd.py \
-	    --design $(DESIGN) \
-	    --fabric $(FABRIC_DB) \
-	    --map $(SA_MAP) \
-	    --unused $(ECO_UNUSED) \
-	    --tieinfo $(ECO_TIEINFO) \
-	    --data $(DS_GREEDY) \
-	    --out $@
+# ---------------------------------------------------------
+# Phase 3: eco
+# ---------------------------------------------------------
+eco: $(FINAL_NETLIST)
 
-$(PD_GIF): $(FABRIC_DB) $(SA_MAP) $(ECO_UNUSED) $(ECO_TIEINFO) $(DS_GREEDY) $(SRC_DIR)/animated_eco_pd.py
-	@echo "=== Generating animated PD-ECO GIF for $(DESIGN) ==="
-	$(PYTHON) $(SRC_DIR)/animated_eco_pd.py \
-	    --design $(DESIGN) \
-	    --fabric $(FABRIC_DB) \
-	    --map $(SA_MAP) \
-	    --unused $(ECO_UNUSED) \
-	    --tieinfo $(ECO_TIEINFO) \
-	    --data $(DS_GREEDY) \
-	    --out $(PD_PLOT) \
-	    --gif $@ \
-	    --animate
+$(FINAL_NETLIST): $(MAP_FILE) $(ECO_SCRIPTS)
+	@mkdir -p "$(BUILD_DIR)"
 
-visualize: $(PD_PLOT)
+	@echo "========================================"
+	@echo " Phase 3 (CTS + Power-down ECO) flow"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@echo
 
-# ----------------------------------------------------------------------
-# Cleanup
-# ----------------------------------------------------------------------
+	@echo "[1/5] Running eco_generator.py (CTS + power-down ECO)..."
+	@$(PYTHON) src/eco_generator.py --design "$(DESIGN)"
+
+	@echo
+	@echo "[2/5] Running generate_verilog.py..."
+	@$(PYTHON) src/generate_verilog.py --design "$(DESIGN)"
+
+	@echo
+	@echo "[3/5] Running generate_pd_eco.py..."
+	@$(PYTHON) src/generate_pd_eco.py --design "$(DESIGN)"
+
+	@echo
+	@echo "[4/5] Running animated_eco_pd.py..."
+	@$(PYTHON) src/animated_eco_pd.py --design "$(DESIGN)" --animate
+
+	@echo
+	@echo "[5/5] Running visualize_cts.py..."
+	@$(PYTHON) src/visualize_cts.py \
+	  --fabric "build/fabric/fabric_db.json" \
+	  --map "build/$(DESIGN)/$(DESIGN)_sa.map" \
+	  --old_netlist "build/$(DESIGN)/$(DESIGN)_mapped_netlist_graph.json" \
+	  --new_netlist "build/$(DESIGN)/$(DESIGN)_cts_mapped_netlist_graph.json" \
+	  --out "build/$(DESIGN)/$(DESIGN)_cts_vis.png"
+
+	@echo
+	@echo "========================================"
+	@echo " Phase 3 completed for design: $(DESIGN)"
+	@echo "========================================"
+
+	@test -f "$(FINAL_NETLIST)" || cp "build/$(DESIGN)/$(DESIGN)_pd_eco_netlist.v" "$(FINAL_NETLIST)"
+
+# ---------------------------------------------------------
+# Phase 4: route
+# Order:
+#   1) make_def.py   -> <design>_fixed.def
+#   2) rename.py     -> <design>_renamed.v
+#   3) openroad route.tcl -> <design>.spef
+# ---------------------------------------------------------
+route: $(SPEF_FILE)
+
+$(FIXED_DEF): $(MAP_FILE) src/make_def.py
+	@mkdir -p "$(BUILD_DIR)"
+	@echo "========================================"
+	@echo " Phase 4.1: Generating DEF with make_def.py"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@$(PYTHON) src/make_def.py --design "$(DESIGN)"
+
+$(RENAMED_NET): $(FINAL_NETLIST) $(MAP_FILE) src/rename.py
+	@mkdir -p "$(BUILD_DIR)"
+	@echo "========================================"
+	@echo " Phase 4.2: Renaming instances with rename.py"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@$(PYTHON) src/rename.py --design "$(DESIGN)"
+
+$(SPEF_FILE): $(FIXED_DEF) $(RENAMED_NET) $(ROUTE_TCL)
+	@mkdir -p "$(BUILD_DIR)"
+	@echo "========================================"
+	@echo " Phase 4.3: Routing with OpenROAD (route.tcl)"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@echo
+	@DESIGN_NAME="$(DESIGN)" openroad -exit "$(ROUTE_TCL)"
+
+# ---------------------------------------------------------
+# Phase 5: sta
+# Order:
+#   1) (implicitly after route) .spef exists
+#   2) copy SDC to build/<design>/
+#   3) openroad sta.tcl -> <design>_setup.rpt, etc.
+# ---------------------------------------------------------
+sta: $(STA_SETUP_RPT)
+
+$(SDC_BUILD): $(SDC_SRC)
+	@mkdir -p "$(BUILD_DIR)"
+	@cp "$(SDC_SRC)" "$(SDC_BUILD)"
+
+$(STA_SETUP_RPT): $(SPEF_FILE) $(RENAMED_NET) $(SDC_BUILD) $(STA_TCL)
+	@mkdir -p "$(BUILD_DIR)"
+	@echo "========================================"
+	@echo " Phase 5: STA with OpenROAD (sta.tcl)"
+	@echo " Design       : $(DESIGN)"
+	@echo "========================================"
+	@echo
+	@DESIGN_NAME="$(DESIGN)" openroad -exit "$(STA_TCL)"
+
+	@echo
+	@echo "========================================"
+	@echo " Visualizing STA results (visualize_sta.py)"
+	@echo "========================================"
+	@$(PYTHON) $(VIS_STA_SCRIPT) \
+	  --fabric "build/fabric/fabric_db.json" \
+	  --map "$(MAP_FILE)" \
+	  --setup_rpt "$(STA_SETUP_RPT)" \
+	  --out_histogram "$(BUILD_DIR)/$(DESIGN)_sta_slack_hist.png" \
+	  --out_critical "$(BUILD_DIR)/$(DESIGN)_sta_critical_path.png" \
+	  --width 2000 \
+	  --slot-w 0.46 \
+	  --slot-h 2.72
+
+# ---------------------------------------------------------
+# clean
+# ---------------------------------------------------------
 clean:
-	@echo "=== Cleaning build artifacts ==="
-	rm -rf $(BUILD_DIR) designs
+	@echo ">>> Cleaning build/"
+	@rm -rf build
