@@ -138,7 +138,8 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	@$(PYTHON) src/greedyPlacementVisualization.py \
 	  --design "$(DESIGN)" \
 	  --data "build/$(DESIGN)/data_structures.json" \
-	  --fabric "$(FABRIC_DB)"
+	  --fabric "$(FABRIC_DB)" \
+	  --output "build/$(DESIGN)/placement_animation.gif"
 
 	@echo
 	@echo "[3/3] Running visualize_graphs.py (density + net HPWL hist)..."

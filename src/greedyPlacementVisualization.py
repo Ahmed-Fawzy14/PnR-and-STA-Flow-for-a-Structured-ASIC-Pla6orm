@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--design", required=True, help="Design Name")
     parser.add_argument("--data", required=True, help="Path to processed_data.json")
     parser.add_argument("--fabric", required=True, help="Path to fabric_cells.json")
-    parser.add_argument("--output", default="placement_animation.gif", help="Output GIF path")
+    parser.add_argument("--output", required=True, help="Output GIF path")
     parser.add_argument("--interval", type=int, default=50, help="Placements per frame")
     parser.add_argument("--width", type=int, default=1000, help="Image width")
 
