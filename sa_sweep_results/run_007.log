@@ -1,0 +1,13 @@
+[INFO] Using random seed 42.
+[INFO] Loading data structures from 'build/6502/data_structures_sa.json'...
+[INFO] Loading initial placement map from '6502.map'...
+Traceback (most recent call last):
+  File "E:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\src\simulated_annealing.py", line 882, in <module>
+    main()
+    ~~~~^^
+  File "E:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\src\simulated_annealing.py", line 853, in main
+    initial_placement = load_map(args.initial_map)
+  File "E:\Fall 2025\DD2\Project\PnR-and-STA-Flow-for-a-Structured-ASIC-Pla6orm\src\simulated_annealing.py", line 107, in load_map
+    with open(path, "r", encoding="utf-8") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '6502.map'

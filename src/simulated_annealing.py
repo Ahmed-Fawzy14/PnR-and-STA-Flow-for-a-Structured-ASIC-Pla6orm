@@ -19,21 +19,13 @@ This script:
    - "<inst_name> <slot_name>" per line.
 
 3) Builds a netlist view from logical.instances only:
-   - net_to_insts: bit ID -> set of instances touching that bit
-   - inst_to_nets: inst_name -> set of bit IDs used by that instance
+   - net_to_insts: for each bit ID, which instances touch it?
      (We do NOT depend on logical_db["net_graph"]; pins are enough.)
 
 4) Defines a cost function:
    - Total Half-Perimeter Wirelength (HPWL) over all nets (bits):
        HPWL(net) = (max_x - min_x) + (max_y - min_y)
      using the (x, y) of the slot assigned to each instance.
-
-   We maintain:
-     - net_hpwl[bit_id] = HPWL for that net
-     - current_cost = sum(net_hpwl.values())
-
-   For each move, we update cost *incrementally* by recomputing HPWL
-   only for nets affected by the moved instance(s).
 
 5) Runs simulated annealing with the schedule/knobs from the slides:
 
@@ -68,10 +60,20 @@ This script:
 6) Writes the best placement found to out_map, with the same
    "<inst_name> <slot_name>" format as the greedy placer.
 
-Assumption / invariant:
-- The initial map is a 1–1 mapping for logical.instances:
-    * every logical instance appears in the map
-    * the map contains no extra instances beyond logical.instances
+Usage example:
+
+    python3 simulated_annealing.py \
+        --data-structures build/6502/data_structures.json \
+        --initial-map build/6502/6502.map \
+        --out-map build/6502/6502_sa.map \
+        --num-temp-steps 60 \
+        --moves-per-temp 1000 \
+        --T-initial 200.0 \
+        --alpha 0.95 \
+        --P-refine 0.7 \
+        --W-initial 0.5 \
+        --beta 0.95 \
+        --seed 42
 """
 
 import argparse
@@ -155,25 +157,21 @@ def compute_die_bbox(slot_info: Dict[str, Dict[str, Any]]) -> Tuple[float, float
     return min(xs), max(xs), min(ys), max(ys)
 
 
-# ---------------- Net index builders ----------------
+# ---------------- Data structure builders ----------------
 
-def build_net_indices(
-    instances: Dict[str, Any]
-) -> Tuple[Dict[int, Set[str]], Dict[str, Set[int]]]:
+def build_net_to_insts(instances: Dict[str, Any]) -> Dict[int, Set[str]]:
     """
-    Build both:
-        net_to_insts: bit_id -> set(inst_name)
-        inst_to_nets: inst_name -> set(bit_id)
-
-    Using pin bit IDs from logical.instances only.
+    Build net_to_insts from logical.instances only, using pin bit IDs.
 
     Each pin is an array of integers (bit IDs). Any pins that share the
     same bit ID are considered connected on the same net (that bit).
+
+    Returns:
+        net_to_insts: bit_id (int) -> set of instance names that touch that bit.
     """
     from collections import defaultdict
 
     net_to_insts: Dict[int, Set[str]] = defaultdict(set)
-    inst_to_nets: Dict[str, Set[int]] = defaultdict(set)
 
     for inst_name, cell in instances.items():
         pins = cell.get("pins", {})
@@ -181,10 +179,10 @@ def build_net_indices(
             if not isinstance(bit_list, list):
                 continue
             for bit in bit_list:
+                # bit is an integer per schema
                 net_to_insts[bit].add(inst_name)
-                inst_to_nets[inst_name].add(bit)
 
-    return net_to_insts, inst_to_nets
+    return net_to_insts
 
 
 def build_type_index(instances: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
@@ -217,9 +215,6 @@ def build_free_slots(
     Build free slot lists per physical type by starting from all slots and
     removing those used in the current placement.
 
-    Assumes:
-      - initial placement only contains instances present in inst_type.
-
     Returns:
         free_slots_by_type: phys_type -> [slot_name, ...]
     """
@@ -229,11 +224,8 @@ def build_free_slots(
     for inst_name, slot_name in placement.items():
         ctype = inst_type.get(inst_name)
         if ctype is None:
-            # Should not happen if we enforce 1–1 mapping earlier
-            raise ValueError(
-                f"Instance {inst_name!r} from placement is not in inst_type; "
-                "initial map and logical.instances are inconsistent."
-            )
+            # If an instance in the map isn't in logical.instances, we simply skip it.
+            continue
         used_slots_by_type[ctype].add(slot_name)
 
     free_slots_by_type: Dict[str, List[str]] = {}
@@ -248,40 +240,51 @@ def build_free_slots(
 
 # ---------------- HPWL cost computation ----------------
 
-def compute_hpwl_for_net(
-    bit_id: int,
+def compute_total_hpwl(
     net_to_insts: Dict[int, Set[str]],
     slot_info: Dict[str, Dict[str, Any]],
     placement: Dict[str, str],
 ) -> float:
     """
-    Compute HPWL for a single net (bit_id) given the current placement.
+    Compute total half-perimeter wirelength (HPWL), summing over all nets.
+
+    For each net (bit): consider all instances that touch that net and have
+    a defined placement. Take their (x, y) from slot_info and compute:
+
+        HPWL_net = (max_x - min_x) + (max_y - min_y)
+
+    Nets with 0 or 1 placed instances contribute 0.
+
+    Returns:
+        total HPWL (float)
     """
-    insts = net_to_insts.get(bit_id)
-    if not insts:
-        return 0.0
+    total_hpwl = 0.0
 
-    xs: List[float] = []
-    ys: List[float] = []
+    for _bit_id, insts in net_to_insts.items():
+        xs: List[float] = []
+        ys: List[float] = []
 
-    for inst in insts:
-        slot = placement.get(inst)
-        if slot is None:
-            continue
-        sinfo = slot_info.get(slot)
-        if not sinfo:
-            continue
-        x = sinfo.get("x")
-        y = sinfo.get("y")
-        if x is None or y is None:
-            continue
-        xs.append(float(x))
-        ys.append(float(y))
+        for inst in insts:
+            slot = placement.get(inst)
+            if slot is None:
+                continue
+            sinfo = slot_info.get(slot)
+            if not sinfo:
+                continue
 
-    if len(xs) < 2:
-        return 0.0
+            x = sinfo.get("x")
+            y = sinfo.get("y")
+            if x is None or y is None:
+                continue
 
-    return (max(xs) - min(xs)) + (max(ys) - min(ys))
+            xs.append(float(x))
+            ys.append(float(y))
+
+        if len(xs) >= 2:
+            hpwl = (max(xs) - min(xs)) + (max(ys) - min(ys))
+            total_hpwl += hpwl
+
+    return total_hpwl
 
 
 # ---------------- SA move generation ----------------
@@ -505,10 +508,6 @@ def simulated_annealing(
       - W_initial (fraction of die size)
       - Window Cooling Rate beta (W_k = W_initial * beta^k)
 
-    Requirements on the initial placement:
-      - Every logical instance is present in initial_placement.
-      - initial_placement contains no extra instances not in 'instances'.
-
     Arguments:
         instances          : logical.instances
         slot_info          : fabric.slot_info
@@ -542,31 +541,11 @@ def simulated_annealing(
 
     total_moves = num_temp_steps * moves_per_temp
 
-    print("[INFO] Building net indices (net_to_insts, inst_to_nets)...")
-    net_to_insts, inst_to_nets = build_net_indices(instances)
+    print("[INFO] Building net_to_insts...")
+    net_to_insts = build_net_to_insts(instances)
 
     print("[INFO] Building type index...")
     inst_type, type_to_insts = build_type_index(instances)
-
-    # --- Consistency checks between logical.instances and initial placement ---
-
-    # Instances in the map but not in logical.instances
-    missing_insts = [inst for inst in initial_placement if inst not in instances]
-    if missing_insts:
-        example = ", ".join(missing_insts[:5])
-        raise ValueError(
-            f"{len(missing_insts)} instances in initial placement are not in logical.instances "
-            f"(e.g. {example}). The greedy map must be strictly consistent with logical.instances."
-        )
-
-    # Logical instances that are not placed in the initial map
-    unplaced_insts = [inst for inst in instances if inst not in initial_placement]
-    if unplaced_insts:
-        example = ", ".join(unplaced_insts[:5])
-        raise ValueError(
-            f"{len(unplaced_insts)} logical instances are missing from the initial placement map "
-            f"(e.g. {example}). Greedy placer may have failed or produced an incomplete map."
-        )
 
     print("[INFO] Building free slot lists...")
     free_slots_by_type = build_free_slots(slots_by_phys_type, initial_placement, inst_type)
@@ -576,15 +555,15 @@ def simulated_annealing(
     min_x, max_x, min_y, max_y = die_bbox
     print(f"[INFO] Die bbox: x=[{min_x:.3f}, {max_x:.3f}], y=[{min_y:.3f}, {max_y:.3f}]")
 
+    # Check that all placed instances are known in instances
+    missing_insts = [inst for inst in initial_placement if inst not in instances]
+    if missing_insts:
+        print(f"[WARN] {len(missing_insts)} instances in initial map are not in logical.instances. "
+              f"They will be ignored in cost (but still placed).")
+
     # Current solution
     placement: Dict[str, str] = dict(initial_placement)
-
-    # Pre-compute HPWL for each net and the initial total cost
-    net_hpwl: Dict[int, float] = {}
-    for bit_id in net_to_insts.keys():
-        hpwl = compute_hpwl_for_net(bit_id, net_to_insts, slot_info, placement)
-        net_hpwl[bit_id] = hpwl
-    current_cost = sum(net_hpwl.values())
+    current_cost = compute_total_hpwl(net_to_insts, slot_info, placement)
     best_placement: Dict[str, str] = dict(placement)
     best_cost = current_cost
 
@@ -599,10 +578,6 @@ def simulated_annealing(
     for k in range(num_temp_steps):
         # Temperature and window size for this step
         T_k = T_initial * (alpha ** k)
-        # Clamp temperature to avoid divide-by-zero / underflow issues
-        if T_k < 1e-9:
-            T_k = 1e-9
-
         W_k = W_initial * (beta ** k)
 
         for _ in range(moves_per_temp):
@@ -653,30 +628,8 @@ def simulated_annealing(
                         free_slots_by_type,
                     )
 
-            # ---------------------------
-            # Incremental cost evaluation
-            # ---------------------------
-            affected_nets: Set[int] = set()
-            if move_kind == "swap":
-                inst1, _slot1, inst2, _slot2 = move_data
-                affected_nets.update(inst_to_nets.get(inst1, set()))
-                affected_nets.update(inst_to_nets.get(inst2, set()))
-            elif move_kind == "move_free":
-                inst, _old_slot, _new_slot, _ctype = move_data
-                affected_nets.update(inst_to_nets.get(inst, set()))
-            else:
-                raise RuntimeError(f"Unknown move kind {move_kind!r}")
-
-            delta_total = 0.0
-            new_hpwl_local: Dict[int, float] = {}
-
-            for bit_id in affected_nets:
-                old_hpwl = net_hpwl.get(bit_id, 0.0)
-                new_hpwl = compute_hpwl_for_net(bit_id, net_to_insts, slot_info, placement)
-                new_hpwl_local[bit_id] = new_hpwl
-                delta_total += (new_hpwl - old_hpwl)
-
-            new_cost = current_cost + delta_total
+            # Compute new cost
+            new_cost = compute_total_hpwl(net_to_insts, slot_info, placement)
             delta = new_cost - current_cost
 
             # Decide acceptance
@@ -693,9 +646,6 @@ def simulated_annealing(
                 if new_cost < best_cost:
                     best_cost = new_cost
                     best_placement = dict(placement)
-                # Commit new HPWL for affected nets
-                for bit_id, hpwl_val in new_hpwl_local.items():
-                    net_hpwl[bit_id] = hpwl_val
             else:
                 # Revert move
                 if move_kind == "swap":
@@ -704,7 +654,6 @@ def simulated_annealing(
                     revert_move_to_free_slot(placement, free_slots_by_type, move_data)  # type: ignore[arg-type]
                 else:
                     raise RuntimeError(f"Unknown move kind {move_kind!r}")
-                # net_hpwl and current_cost remain unchanged
 
             # Optional progress report
             if report_interval > 0 and (
@@ -875,7 +824,7 @@ def main() -> None:
     # Write best map
     print("[INFO] Writing best placement map...")
     write_map(args.out_map, best_placement)
-    print(f"[INFO] Done. Best HPWL cost: {best_cost:.3f}")
+    print("[INFO] Done.")
 
 
 if __name__ == "__main__":

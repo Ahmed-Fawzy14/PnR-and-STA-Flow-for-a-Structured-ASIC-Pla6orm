@@ -11,6 +11,7 @@ FABRIC_DB     := build/fabric/fabric_db.json
 MAPPED_JSON   := designs/$(DESIGN)_mapped.json
 MAP_FILE      := $(BUILD_DIR)/$(DESIGN).map
 MAP_FILE_SA      := $(BUILD_DIR)/$(DESIGN)_sa.map
+MAP_FILE_CTS      := $(BUILD_DIR)/$(DESIGN)_cts.map
 FINAL_NETLIST := $(BUILD_DIR)/$(DESIGN)_final.v
 
 RENAMED_NET   := $(BUILD_DIR)/$(DESIGN)_renamed.v
@@ -259,14 +260,14 @@ $(STA_SETUP_RPT): $(SPEF_FILE) $(RENAMED_NET) $(SDC_BUILD) $(STA_TCL)
 	@echo " Visualizing STA results (visualize_sta.py)"
 	@echo "========================================"
 	@$(PYTHON) src/visualize_sta.py \
-	  --fabric "build/fabric/fabric_db.json" \
-	  --map "$(MAP_FILE_SA)" \
-	  --setup_rpt "$(STA_SETUP_RPT)" \
-	  --out_histogram "$(BUILD_DIR)/$(DESIGN)_sta_slack_hist.png" \
-	  --out_critical "$(BUILD_DIR)/$(DESIGN)_sta_critical_path.png" \
-	  --width 2000 \
-	  --slot-w 0.46 \
-	  --slot-h 2.72
+	    --fabric "build/fabric/fabric_db.json" \
+	  	--map "build/arith/arith_cts.map" \
+	  	--setup_rpt "build/arith/arith_setup.rpt" \
+	  	--out_histogram "build/arith/arith_sta_slack_hist.png" \
+	  	--out_critical "build/arith/arith_sta_critical_path.png" \
+	  	--width 2000 \
+	  	--slot-w 0.46 \
+	  	--slot-h 2.72
 
 # ---------------------------------------------------------
 # clean
