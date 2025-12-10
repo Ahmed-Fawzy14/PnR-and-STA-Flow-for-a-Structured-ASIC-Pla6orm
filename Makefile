@@ -10,6 +10,7 @@ BUILD_DIR     := build/$(DESIGN)
 FABRIC_DB     := build/fabric/fabric_db.json
 MAPPED_JSON   := designs/$(DESIGN)_mapped.json
 MAP_FILE      := $(BUILD_DIR)/$(DESIGN).map
+MAP_FILE_SA      := $(BUILD_DIR)/$(DESIGN)_sa.map
 FINAL_NETLIST := $(BUILD_DIR)/$(DESIGN)_final.v
 
 RENAMED_NET   := $(BUILD_DIR)/$(DESIGN)_renamed.v
@@ -142,7 +143,7 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	@echo "[3/3] Running visualize_graphs.py (density + net HPWL hist)..."
 	@$(PYTHON) src/visualize_graphs.py \
 	  --data-structures "build/$(DESIGN)/data_structures_sa.json" \
-	  --placement-map   "$(MAP_FILE)" \
+	  --placement-map   "$(MAP_FILE_SA)" \
 	  --design-name     "$(DESIGN)" \
 	  --out-density     "build/$(DESIGN)/$(DESIGN)_density.png" \
 	  --out-net-length  "build/$(DESIGN)/$(DESIGN)_net_length_hist.png"
@@ -229,7 +230,7 @@ $(SPEF_FILE): $(FIXED_DEF) $(RENAMED_NET) $(ROUTE_TCL)
 	@echo " Design       : $(DESIGN)"
 	@echo "========================================"
 	@echo
-	@DESIGN_NAME="$(DESIGN)" openroad -exit "$(ROUTE_TCL)"
+	@DESIGN_NAME="$(DESIGN)" openroad -gui "$(ROUTE_TCL)"
 
 # ---------------------------------------------------------
 # Phase 5: sta
@@ -257,9 +258,9 @@ $(STA_SETUP_RPT): $(SPEF_FILE) $(RENAMED_NET) $(SDC_BUILD) $(STA_TCL)
 	@echo "========================================"
 	@echo " Visualizing STA results (visualize_sta.py)"
 	@echo "========================================"
-	@$(PYTHON) $(VIS_STA_SCRIPT) \
+	@$(PYTHON) src/visualize_sta.py \
 	  --fabric "build/fabric/fabric_db.json" \
-	  --map "$(MAP_FILE)" \
+	  --map "$(MAP_FILE_SA)" \
 	  --setup_rpt "$(STA_SETUP_RPT)" \
 	  --out_histogram "$(BUILD_DIR)/$(DESIGN)_sta_slack_hist.png" \
 	  --out_critical "$(BUILD_DIR)/$(DESIGN)_sta_critical_path.png" \
