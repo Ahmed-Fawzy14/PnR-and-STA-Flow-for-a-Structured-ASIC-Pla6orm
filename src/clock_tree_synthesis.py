@@ -2,9 +2,16 @@
 """
 Clock Tree Synthesis (CTS) for Structured ASIC Platform
 
-This script implements an H-Tree algorithm to build a balanced clock tree
+This script implements a true H-Tree algorithm to build a balanced clock tree
 by finding all placed DFFs (sinks) and using unused buffer/inverter cells
 from the fabric to distribute the clock signal.
+
+The H-Tree algorithm alternates partitioning direction at each level:
+- Even levels: Partition by X-coordinate (left/right split) - horizontal H-bar
+- Odd levels: Partition by Y-coordinate (top/bottom split) - vertical H-bar
+
+This creates the characteristic H-shape pattern with geometric symmetry,
+minimizing clock skew and wirelength.
 """
 
 import json
@@ -253,7 +260,7 @@ class ClockTreeSynthesis:
         A buffer is considered unused if:
         1. It's not in the netlist at all, OR
         2. It's in the netlist but doesn't drive anything (empty output in graph)
-        If none found, fall back to unplaced buffer slots."""
+        Always also includes unplaced buffer slots from fabric_db.json."""
         print(f"[CTS] Finding placed-but-unused buffer/inverter instances...")
         self.unused_buffers = []
         
@@ -277,25 +284,28 @@ class ClockTreeSynthesis:
                         # This buffer is in the netlist but doesn't drive anything - it's unused!
                         self.unused_buffers.append((inst_name, slot_name))
         
-        print(f"[CTS] Found {len(self.unused_buffers)} placed-but-unused buffer/inverter instances")
+        placed_count = len(self.unused_buffers)
+        print(f"[CTS] Found {placed_count} placed-but-unused buffer/inverter instances")
         
-        # If no placed-but-unused buffers found, fall back to unplaced buffer slots
-        if len(self.unused_buffers) == 0:
-            print(f"[CTS] No placed-but-unused buffers found, falling back to unplaced buffer slots...")
-            # Get all buffer and inverter slots from fabric
-            all_buffer_slots = []
-            for buf_type in ["BUF", "INV"]:
-                all_buffer_slots.extend(self.slots_by_type.get(buf_type, []))
-            
-            # Filter to only unplaced slots (not in reverse_placement)
-            for slot_name in all_buffer_slots:
-                if slot_name not in self.reverse_placement:
-                    # Create a temporary instance name for unplaced slots
-                    # Format: cts_unplaced_<slot_name>
-                    inst_name = f"cts_unplaced_{slot_name.replace('__', '_').replace('-', '_')}"
-                    self.unused_buffers.append((inst_name, slot_name))
-            
-            print(f"[CTS] Found {len(self.unused_buffers)} unplaced buffer/inverter slots available")
+        # Always also add unplaced buffer slots from fabric_db.json
+        print(f"[CTS] Adding unplaced buffer/inverter slots from fabric_db.json...")
+        # Get all buffer and inverter slots from fabric
+        all_buffer_slots = []
+        for buf_type in ["BUF", "INV"]:
+            all_buffer_slots.extend(self.slots_by_type.get(buf_type, []))
+        
+        # Filter to only unplaced slots (not in reverse_placement)
+        unplaced_count = 0
+        for slot_name in all_buffer_slots:
+            if slot_name not in self.reverse_placement:
+                # Create a temporary instance name for unplaced slots
+                # Format: cts_unplaced_<slot_name>
+                inst_name = f"cts_unplaced_{slot_name.replace('__', '_').replace('-', '_')}"
+                self.unused_buffers.append((inst_name, slot_name))
+                unplaced_count += 1
+        
+        print(f"[CTS] Added {unplaced_count} unplaced buffer/inverter slots")
+        print(f"[CTS] Total available buffers: {len(self.unused_buffers)} ({placed_count} placed-but-unused + {unplaced_count} unplaced)")
     
     def euclidean_distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """Calculate Euclidean distance between two points"""
@@ -358,11 +368,19 @@ class ClockTreeSynthesis:
     
     def build_htree_recursive(self, sinks: List[str], level: int = 0) -> Optional[str]:
         """
-        Recursively build an H-Tree clock distribution network.
+        Recursively build a true H-Tree clock distribution network.
+        
+        A true H-tree alternates partitioning direction at each level:
+        - Even levels (0, 2, 4...): Partition by X-coordinate (left/right split)
+        - Odd levels (1, 3, 5...): Partition by Y-coordinate (top/bottom split)
+        
+        This creates the characteristic H-shape pattern where:
+        - Horizontal bars connect vertical branches (at even levels)
+        - Vertical bars connect horizontal branches (at odd levels)
         
         Args:
             sinks: List of DFF instance names (or buffer instance names for higher levels)
-            level: Current tree level (for debugging)
+            level: Current tree level (determines partitioning direction)
         
         Returns:
             The instance name of the buffer at this level, or None if no buffer needed
@@ -404,31 +422,46 @@ class ClockTreeSynthesis:
         # Claim this buffer instance
         self.used_buffers.add(buffer_inst_name)
         
-        # Partition sinks into two groups for H-Tree structure
-        # Sort by x-coordinate for better partitioning
-        sorted_sinks = sorted(valid_sinks, key=lambda s: self.get_sink_coordinate(s)[0] if self.get_sink_coordinate(s) else 0)
-        mid = len(sorted_sinks) // 2
-        left_sinks = sorted_sinks[:mid]
-        right_sinks = sorted_sinks[mid:]
+        # TRUE H-TREE: Alternate partitioning direction based on level
+        # Even levels (0, 2, 4...): Partition by X (left/right) - creates horizontal H-bar
+        # Odd levels (1, 3, 5...): Partition by Y (top/bottom) - creates vertical H-bar
+        partition_by_x = (level % 2 == 0)
         
-        # Recursively build left and right subtrees
-        left_buffer = self.build_htree_recursive(left_sinks, level + 1) if left_sinks else None
-        right_buffer = self.build_htree_recursive(right_sinks, level + 1) if right_sinks else None
+        if partition_by_x:
+            # Partition by X-coordinate (left/right split)
+            # Sort by x-coordinate and split into left/right groups
+            sorted_sinks = sorted(valid_sinks, key=lambda s: self.get_sink_coordinate(s)[0] if self.get_sink_coordinate(s) else 0)
+            mid = len(sorted_sinks) // 2
+            group1_sinks = sorted_sinks[:mid]      # Left group
+            group2_sinks = sorted_sinks[mid:]      # Right group
+            partition_dir = "X (left/right)"
+        else:
+            # Partition by Y-coordinate (top/bottom split)
+            # Sort by y-coordinate and split into top/bottom groups
+            sorted_sinks = sorted(valid_sinks, key=lambda s: self.get_sink_coordinate(s)[1] if self.get_sink_coordinate(s) else 0)
+            mid = len(sorted_sinks) // 2
+            group1_sinks = sorted_sinks[:mid]      # Top group (lower Y values)
+            group2_sinks = sorted_sinks[mid:]      # Bottom group (higher Y values)
+            partition_dir = "Y (top/bottom)"
+        
+        # Recursively build subtrees for both groups
+        subtree1 = self.build_htree_recursive(group1_sinks, level + 1) if group1_sinks else None
+        subtree2 = self.build_htree_recursive(group2_sinks, level + 1) if group2_sinks else None
         
         # Record this buffer in the clock tree
         children = []
-        if left_buffer:
-            children.append(left_buffer)
-        if right_buffer:
-            children.append(right_buffer)
+        if subtree1:
+            children.append(subtree1)
+        if subtree2:
+            children.append(subtree2)
         
         self.clock_tree.append((buffer_inst_name, buffer_slot, None, children))
         
         # Record connections
-        if left_buffer:
-            self.clock_connections.append((buffer_inst_name, left_buffer))
-        if right_buffer:
-            self.clock_connections.append((buffer_inst_name, right_buffer))
+        if subtree1:
+            self.clock_connections.append((buffer_inst_name, subtree1))
+        if subtree2:
+            self.clock_connections.append((buffer_inst_name, subtree2))
         
         return buffer_inst_name
     
