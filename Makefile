@@ -46,7 +46,6 @@ ECO_SCRIPTS := \
     src/eco_generator.py \
     src/generate_verilog.py \
     src/generate_pd_eco.py \
-    src/animated_eco_pd.py \
     src/visualize_cts.py
 
 .PHONY: all deps validate place eco route sta clean
@@ -261,11 +260,11 @@ $(STA_SETUP_RPT): $(SPEF_FILE) $(RENAMED_NET) $(SDC_BUILD) $(STA_TCL)
 	@echo " Visualizing STA results (visualize_sta.py)"
 	@echo "========================================"
 	@$(PYTHON) src/visualize_sta.py \
-	    --fabric "build/fabric/fabric_db.json" \
-	  	--map "build/arith/arith_cts.map" \
-	  	--setup_rpt "build/arith/arith_setup.rpt" \
-	  	--out_histogram "build/arith/arith_sta_slack_hist.png" \
-	  	--out_critical "build/arith/arith_sta_critical_path.png" \
+	    --fabric "$(FABRIC_DB)" \
+	  	--map "$(MAP_FILE_CTS)" \
+	  	--setup_rpt "$(BUILD_DIR)/$(DESIGN)_setup.rpt" \
+	  	--out_histogram "$(BUILD_DIR)/$(DESIGN)_sta_slack_hist.png" \
+	  	--out_critical "$(BUILD_DIR)/$(DESIGN)_sta_critical_path.png" \
 	  	--width 2000 \
 	  	--slot-w 0.46 \
 	  	--slot-h 2.72

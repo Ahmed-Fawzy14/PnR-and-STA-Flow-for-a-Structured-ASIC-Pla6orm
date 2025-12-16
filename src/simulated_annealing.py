@@ -697,26 +697,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--num-temp-steps",
         type=int,
-        default=60,
+        default=1000,
         help="Number of temperature steps (default: 60).",
     )
     p.add_argument(
         "--moves-per-temp",
         type=int,
-        default=1000,
+        default=150,
         help="Moves per temperature step N (default: 1000).",
     )
     p.add_argument(
         "--T-initial",
         dest="T_initial",
         type=float,
-        default=200.0,
+        default=4000000.0,
         help="Initial temperature T_initial (default: 200.0).",
     )
     p.add_argument(
         "--alpha",
         type=float,
-        default=0.95,
+        default=0.80,
         help="Cooling rate alpha (T_{k+1} = alpha * T_k), default: 0.95.",
     )
 
@@ -725,7 +725,7 @@ def parse_args() -> argparse.Namespace:
         "--P-refine",
         dest="P_refine",
         type=float,
-        default=0.7,
+        default=0.9,
         help="Probability P_refine of choosing a refine (swap) move; "
              "P_explore = 1 - P_refine (default: 0.7).",
     )
@@ -735,14 +735,14 @@ def parse_args() -> argparse.Namespace:
         "--W-initial",
         dest="W_initial",
         type=float,
-        default=0.5,
+        default=0.3,
         help="Initial exploration window size W_initial as fraction of die width/height "
              "(default: 0.5).",
     )
     p.add_argument(
         "--beta",
         type=float,
-        default=0.95,
+        default=0.90,
         help="Window cooling rate beta (W_k = W_initial * beta^k), default: 0.95.",
     )
 
@@ -756,7 +756,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--seed",
         type=int,
-        default=0,
+        default=42,
         help="Random seed for reproducibility (default: 0; 0 means use system randomness).",
     )
 

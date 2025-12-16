@@ -691,10 +691,9 @@ def main():
     else:
         # Auto-detect: try multiple possible locations for fabric_db.json
         possible_fabric_db_paths = [
-            # os.path.join(build_dir, "fabric", "fabric_db.json"),
+            os.path.join(build_dir, "fabric", "fabric_db.json"),
             os.path.join("build", "fabric", "fabric_db.json"),
-            # os.path.join("fabric_db.json"),
-            # os.path.join("build", "fabric", "cells_by_type.json")
+            os.path.join("fabric_db.json"),
         ]
         for path in possible_fabric_db_paths:
             if os.path.exists(path):

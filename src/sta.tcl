@@ -27,7 +27,7 @@ read_spef "${build_dir}/${design_name}.spef"
 # 4. Read Constraints
 read_sdc "${platform_dir}/design.sdc"
 
-# 5. Reporting (As per your request and PDF [cite: 174])
+# 5. Reporting
 puts "Reporting Setup..."
 report_checks -path_delay max -format full_clock_expanded -fields {slew cap input_pins nets fanout} -no_line_splits > "${build_dir}/${design_name}_setup.rpt"
 
