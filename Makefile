@@ -48,14 +48,19 @@ ECO_SCRIPTS := \
     src/generate_pd_eco.py \
     src/visualize_cts.py
 
-SA_NUM_TEMP_STEPS ?= 1000
-SA_MOVES_PER_TEMP ?= 150
+SA_NUM_TEMP_STEPS ?= 150
+SA_MOVES_PER_TEMP ?= 1000
 SA_T_INITIAL      ?= 4000000
 SA_ALPHA          ?= 0.80
 SA_P_REFINE       ?= 0.9
 SA_W_INITIAL      ?= 0.3
 SA_BETA           ?= 0.90
 SA_SEED           ?= 42
+SA_GAMMA          ?= 0.75
+SA_LAMBDA_CONG    ?= 0.10
+SA_LAMBDA_GROWTH  ?= 1.00
+SA_CONG_BINS_X    ?= 30
+SA_CONG_BINS_Y    ?= 30
 
 
 .PHONY: all deps validate place eco route sta clean
@@ -139,7 +144,6 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	@echo "========================================"
 	@echo
 
-	@echo "[1/3] Running placer.py (greedy + SA)..."
 	@$(PYTHON) src/placer.py --design "$(DESIGN)" \
 	  --sa-num-temp-steps $(SA_NUM_TEMP_STEPS) \
 	  --sa-moves-per-temp $(SA_MOVES_PER_TEMP) \
@@ -148,7 +152,13 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	  --sa-P-refine $(SA_P_REFINE) \
 	  --sa-W-initial $(SA_W_INITIAL) \
 	  --sa-beta $(SA_BETA) \
-	  --sa-seed $(SA_SEED)
+	  --sa-seed $(SA_SEED) \
+	  --sa-gamma $(SA_GAMMA) \
+	  --sa-lambda-cong $(SA_LAMBDA_CONG) \
+	  --sa-lambda-growth $(SA_LAMBDA_GROWTH) \
+	  --sa-cong-bins-x $(SA_CONG_BINS_X) \
+	  --sa-cong-bins-y $(SA_CONG_BINS_Y)
+
 
 
 	@echo

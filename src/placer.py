@@ -1,5 +1,3 @@
-# placer.py
-
 #!/usr/bin/env python3
 # placer.py
 """
@@ -10,7 +8,7 @@ Runs the four existing scripts in order, **without** modifying them:
   1) dataStructuresGenerator.py
   2) greedyPlacer.py
   3) dataStructuresGenerator_SA.py
-  4) simulated_annealing.py
+  4) simulated_annealing.py  (HPWL + congestion)
 
 Typical usage:
 
@@ -55,63 +53,36 @@ def parse_args() -> argparse.Namespace:
     )
 
     # SA knobs (mirroring simulated_annealing.py, prefixed with sa-)
-    p.add_argument(
-        "--sa-num-temp-steps",
-        type=int,
-        default=60,
-        help="SA: number of temperature steps (default: 60).",
-    )
-    p.add_argument(
-        "--sa-moves-per-temp",
-        type=int,
-        default=1000,
-        help="SA: moves per temperature step (default: 1000).",
-    )
-    p.add_argument(
-        "--sa-T-initial",
-        dest="sa_T_initial",
-        type=float,
-        default=200.0,
-        help="SA: initial temperature (default: 200.0).",
-    )
-    p.add_argument(
-        "--sa-alpha",
-        type=float,
-        default=0.95,
-        help="SA: cooling rate alpha (default: 0.95).",
-    )
-    p.add_argument(
-        "--sa-P-refine",
-        dest="sa_P_refine",
-        type=float,
-        default=0.7,
-        help="SA: probability of refine (swap) moves (default: 0.7).",
-    )
-    p.add_argument(
-        "--sa-W-initial",
-        dest="sa_W_initial",
-        type=float,
-        default=0.5,
-        help="SA: initial exploration window fraction (default: 0.5).",
-    )
-    p.add_argument(
-        "--sa-beta",
-        type=float,
-        default=0.95,
-        help="SA: window cooling rate beta (default: 0.95).",
-    )
-    p.add_argument(
-        "--sa-report-interval",
-        type=int,
-        default=1000,
-        help="SA: print progress every N moves (default: 1000).",
-    )
-    p.add_argument(
-        "--sa-seed",
-        type=int,
-        default=0,
-        help="SA: random seed (0 = system randomness, default: 0).",
-    )
+    p.add_argument("--sa-num-temp-steps", type=int, default=60,
+                   help="SA: number of temperature steps (default: 60).")
+    p.add_argument("--sa-moves-per-temp", type=int, default=1000,
+                   help="SA: moves per temperature step (default: 1000).")
+    p.add_argument("--sa-T-initial", dest="sa_T_initial", type=float, default=200.0,
+                   help="SA: initial temperature (default: 200.0).")
+    p.add_argument("--sa-alpha", type=float, default=0.95,
+                   help="SA: cooling rate alpha (default: 0.95).")
+    p.add_argument("--sa-P-refine", dest="sa_P_refine", type=float, default=0.7,
+                   help="SA: probability of refine (swap) moves (default: 0.7).")
+    p.add_argument("--sa-W-initial", dest="sa_W_initial", type=float, default=0.5,
+                   help="SA: initial exploration window fraction (default: 0.5).")
+    p.add_argument("--sa-beta", type=float, default=0.95,
+                   help="SA: window cooling rate beta (default: 0.95).")
+    p.add_argument("--sa-report-interval", type=int, default=1000,
+                   help="SA: print progress every N moves (default: 1000).")
+    p.add_argument("--sa-seed", type=int, default=0,
+                   help="SA: random seed (0 = system randomness, default: 0).")
+
+    # ---------------- NEW: HPWL + congestion knobs ----------------
+    p.add_argument("--sa-gamma", type=float, default=0.75,
+                   help="SA: weighted HPWL strength: w=1+gamma*log2(deg). (default: 0.75)")
+    p.add_argument("--sa-lambda-cong", dest="sa_lambda_cong", type=float, default=0.10,
+                   help="SA: congestion weight λ in total = hpwl + λ*cong. (default: 0.10)")
+    p.add_argument("--sa-lambda-growth", dest="sa_lambda_growth", type=float, default=1.00,
+                   help="SA: multiply λ each temp step: λ_k = λ0*(growth^k). (default: 1.00)")
+    p.add_argument("--sa-cong-bins-x", dest="sa_cong_bins_x", type=int, default=30,
+                   help="SA: congestion grid bins in X. (default: 30)")
+    p.add_argument("--sa-cong-bins-y", dest="sa_cong_bins_y", type=int, default=30,
+                   help="SA: congestion grid bins in Y. (default: 30)")
 
     return p.parse_args()
 
@@ -127,9 +98,10 @@ def main() -> None:
     base_dir = os.path.join("build", design)
     netlist_path = os.path.join(base_dir, f"{design}_mapped_netlist_graph.json")
     logical_path = os.path.join(base_dir, f"{design}_logical_db.json")
+
+    # NOTE: keep your existing paths (I didn't change your flow assumptions)
     fabric_path = os.path.join("build", "fabric", "cells_by_type.json")
     fabric_path_greedy = os.path.join("build", "fabric", "fabric_db.json")
-
 
     # Files that match your existing scripts’ expectations
     greedy_ds_path = os.path.join(base_dir, "data_structures.json")        # for greedy
@@ -172,7 +144,6 @@ def main() -> None:
     # 3) dataStructuresGenerator_SA.py
     # -----------------------------------------------------
     print("[PIPELINE] Stage 3: dataStructuresGenerator_SA.py")
-    # Reuse that module's helpers instead of re-implementing logic
     logical_db = dsa.load_json(logical_path)
     fabric_db  = dsa.load_json(fabric_path)
 
@@ -193,11 +164,10 @@ def main() -> None:
     # -----------------------------------------------------
     # 4) simulated_annealing.py
     # -----------------------------------------------------
-    print("[PIPELINE] Stage 4: simulated_annealing.py")
+    print("[PIPELINE] Stage 4: simulated_annealing.py (HPWL + congestion)")
 
     if args.sa_seed != 0:
-        # Seed the RNG used inside simulated_annealing.py
-        sa.random.seed(args.sa_seed)  # type: ignore[attr-defined]
+        sa.random.seed(args.sa_seed)  # uses the random module imported inside simulated_annealing.py
         print(f"[PIPELINE] SA: Using random seed {args.sa_seed}.")
     else:
         print("[PIPELINE] SA: Using system randomness (no fixed seed).")
@@ -212,7 +182,7 @@ def main() -> None:
 
     instances = logical_sa.get("instances")
     if not isinstance(instances, dict):
-        instances = logical_sa.get("cells")  # fallback if schema changes
+        instances = logical_sa.get("cells")
     if not isinstance(instances, dict):
         raise ValueError("'logical.instances' or 'logical.cells' must be a dict in SA data_structures.json.")
 
@@ -240,12 +210,17 @@ def main() -> None:
         P_refine=args.sa_P_refine,
         W_initial=args.sa_W_initial,
         beta=args.sa_beta,
+        gamma=args.sa_gamma,
+        lambda_cong=args.sa_lambda_cong,
+        lambda_growth=args.sa_lambda_growth,
+        cong_bins_x=args.sa_cong_bins_x,
+        cong_bins_y=args.sa_cong_bins_y,
         report_interval=args.sa_report_interval,
     )
 
     print("[PIPELINE] SA: Writing best map...")
     sa.write_map(sa_map_path, best_placement)
-    print(f"[PIPELINE] SA: Best HPWL = {best_cost:.3f}")
+    print(f"[PIPELINE] SA: Best TOTAL cost = {best_cost:.3f}")
     print(f"[PIPELINE] Final SA map = {sa_map_path}")
     print("=" * 80)
     print("[PIPELINE] Done.")
