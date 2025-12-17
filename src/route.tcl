@@ -6,7 +6,7 @@ if { [info exists ::env(DESIGN_NAME)] } {
 }
 
 set build_dir "build/${design_name}"
-set platform_dir "tech" 
+set platform_dir "tech"
 
 read_lef "${platform_dir}/sky130_fd_sc_hd.tlef"
 

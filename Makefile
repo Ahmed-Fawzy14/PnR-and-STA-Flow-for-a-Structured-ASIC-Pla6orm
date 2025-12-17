@@ -17,6 +17,7 @@ FINAL_NETLIST := $(BUILD_DIR)/$(DESIGN)_final.v
 RENAMED_NET   := $(BUILD_DIR)/$(DESIGN)_renamed.v
 FIXED_DEF     := $(BUILD_DIR)/$(DESIGN)_fixed.def
 SPEF_FILE     := $(BUILD_DIR)/$(DESIGN).spef
+PLACE_METRICS := $(BUILD_DIR)/$(DESIGN)_place_metrics.json
 
 SDC_SRC       :=  tech/design.sdc
 SDC_BUILD     := $(BUILD_DIR)/$(DESIGN).sdc
@@ -48,7 +49,7 @@ ECO_SCRIPTS := \
     src/generate_pd_eco.py \
     src/visualize_cts.py
 
-SA_NUM_TEMP_STEPS ?= 150
+SA_NUM_TEMP_STEPS ?= 500
 SA_MOVES_PER_TEMP ?= 1000
 SA_T_INITIAL      ?= 4000000
 SA_ALPHA          ?= 0.80
@@ -56,11 +57,6 @@ SA_P_REFINE       ?= 0.9
 SA_W_INITIAL      ?= 0.3
 SA_BETA           ?= 0.90
 SA_SEED           ?= 42
-SA_GAMMA          ?= 0.75
-SA_LAMBDA_CONG    ?= 0.10
-SA_LAMBDA_GROWTH  ?= 1.00
-SA_CONG_BINS_X    ?= 30
-SA_CONG_BINS_Y    ?= 30
 
 
 .PHONY: all deps validate place eco route sta clean
@@ -133,9 +129,9 @@ $(VALIDATE_STAMP): $(MAPPED_JSON) $(PHASE1_SCRIPTS)
 # ---------------------------------------------------------
 # Phase 2: place
 # ---------------------------------------------------------
-place: $(MAP_FILE)
+place: $(PLACE_METRICS)
 
-$(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
+$(PLACE_METRICS): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	@mkdir -p "$(BUILD_DIR)"
 
 	@echo "========================================"
@@ -145,6 +141,7 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	@echo
 
 	@$(PYTHON) src/placer.py --design "$(DESIGN)" \
+	  --metrics-out "$(PLACE_METRICS)" \
 	  --sa-num-temp-steps $(SA_NUM_TEMP_STEPS) \
 	  --sa-moves-per-temp $(SA_MOVES_PER_TEMP) \
 	  --sa-T-initial $(SA_T_INITIAL) \
@@ -152,12 +149,7 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	  --sa-P-refine $(SA_P_REFINE) \
 	  --sa-W-initial $(SA_W_INITIAL) \
 	  --sa-beta $(SA_BETA) \
-	  --sa-seed $(SA_SEED) \
-	  --sa-gamma $(SA_GAMMA) \
-	  --sa-lambda-cong $(SA_LAMBDA_CONG) \
-	  --sa-lambda-growth $(SA_LAMBDA_GROWTH) \
-	  --sa-cong-bins-x $(SA_CONG_BINS_X) \
-	  --sa-cong-bins-y $(SA_CONG_BINS_Y)
+	  --sa-seed $(SA_SEED)
 
 
 
@@ -177,6 +169,8 @@ $(MAP_FILE): $(VALIDATE_STAMP) $(MAPPED_JSON) $(PLACER_SCRIPTS)
 	  --design-name     "$(DESIGN)" \
 	  --out-density     "build/$(DESIGN)/$(DESIGN)_density.png" \
 	  --out-net-length  "build/$(DESIGN)/$(DESIGN)_net_length_hist.png"
+
+	@test -f "$(PLACE_METRICS)" || (echo "ERROR: metrics file not created: $(PLACE_METRICS)"; exit 1)
 
 	@echo
 	@echo "========================================"
@@ -208,7 +202,7 @@ $(FINAL_NETLIST): $(MAP_FILE) $(ECO_SCRIPTS)
 	@echo "[3/3] Running visualize_cts.py..."
 	@$(PYTHON) src/visualize_cts.py \
 	  --fabric "build/fabric/fabric_db.json" \
-	  --map "build/$(DESIGN)/$(DESIGN)_sa.map" \
+	  --map "build/$(DESIGN)/$(MAP_FILE_CTS)" \
 	  --old_netlist "build/$(DESIGN)/$(DESIGN)_mapped_netlist_graph.json" \
 	  --new_netlist "build/$(DESIGN)/$(DESIGN)_cts_mapped_netlist_graph.json" \
 	  --out "build/$(DESIGN)/$(DESIGN)_cts_vis.png"
@@ -252,8 +246,21 @@ $(SPEF_FILE): $(FIXED_DEF) $(RENAMED_NET) $(ROUTE_TCL)
 	@echo " Design       : $(DESIGN)"
 	@echo "========================================"
 	@echo
-	@DESIGN_NAME="$(DESIGN)" openroad -gui "$(ROUTE_TCL)"
+	@DESIGN_NAME="$(DESIGN)" openroad -threads $(nproc) -gui "$(ROUTE_TCL)"
 
+	@echo
+	@if [ -f "$(BUILD_DIR)/$(DESIGN)_congestion.rpt" ]; then \
+		echo "========================================"; \
+		echo " Generating congestion heatmap"; \
+		echo "========================================"; \
+		$(PYTHON) src/generate_congestion_heatmap.py \
+			--design "$(DESIGN)" \
+			--def_file "$(BUILD_DIR)/$(DESIGN)_fixed.def" \
+			--rpt_file "$(BUILD_DIR)/$(DESIGN)_congestion.rpt" \
+			--output "$(BUILD_DIR)/$(DESIGN)_congestion_heatmap.png"; \
+	else \
+		echo "[INFO] No congestion report found: $(BUILD_DIR)/$(DESIGN)_congestion.rpt (skipping heatmap)"; \
+	fi
 # ---------------------------------------------------------
 # Phase 5: sta
 # Order:

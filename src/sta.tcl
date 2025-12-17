@@ -36,3 +36,4 @@ report_checks -path_delay min -format full_clock_expanded -fields {slew cap inpu
 
 puts "Reporting Skew..."
 report_clock_skew > "${build_dir}/${design_name}_skew.rpt"
+report_checks -summary > "${build_dir}/${design_name}_timing_summary.rpt"

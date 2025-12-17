@@ -1,16 +1,79 @@
 #!/usr/bin/env python3
 # simulated_annealing.py
 """
-Simulated Annealing Placer (HPWL + Congestion)
+Simulated Annealing Placer
 
-Adds an SA-level routability improvement:
-  total_cost = weighted_hpwl + lambda_cong * congestion_cost
+Pipeline / assumptions:
+- dataStructuresGenerator.py has already run and produced:
+    build/<design>/data_structures.json
+- greedyPlacer.py has already run and produced:
+    build/<design>/<design>.map
 
-Where:
-- weighted_hpwl uses net weights that grow with net degree (fanout).
-- congestion_cost uses a simple RUDY-style demand on a coarse bin grid:
-    For each net bbox in bin space, add (w/area) demand to bins in bbox
-    congestion_cost = sum_over_bins(demand^2)
+This script:
+1) Loads data_structures.json:
+   - logical.instances           (inst_name -> { "type": ..., "pins": {...}, ... })
+   - fabric.slot_info            (slot_name -> { "x", "y", "tile", "physical_cell_type", ... })
+   - fabric.slots_by_phys_type   (phys_type -> [slot_name, ...])
+
+2) Loads the initial greedy map:
+   - "<inst_name> <slot_name>" per line.
+
+3) Builds a netlist view from logical.instances only:
+   - net_to_insts: for each bit ID, which instances touch it?
+     (We do NOT depend on logical_db["net_graph"]; pins are enough.)
+
+4) Defines a cost function:
+   - Total Half-Perimeter Wirelength (HPWL) over all nets (bits):
+       HPWL(net) = (max_x - min_x) + (max_y - min_y)
+     using the (x, y) of the slot assigned to each instance.
+
+5) Runs simulated annealing with the schedule/knobs from the slides:
+
+   Annealing Schedule:
+     - T_initial: initial temperature
+     - Cooling Rate (alpha): T_{k+1} = alpha * T_k
+     - Moves per Temp (N): number of move attempts per temperature step
+
+   Hybrid Move Set:
+     - P_refine vs P_explore: probability of choosing a "Refine" swap
+       vs a windowed "Explore" move. We use:
+           P_refine = argument
+           P_explore = 1 - P_refine
+
+   Exploration Window:
+     - W_initial: starting window size as a fraction of die width/height
+       for explore moves (e.g. 0.5 => 50% of die width/height).
+     - Window Cooling Rate (beta): window size shrinks each temperature step:
+           W_k = W_initial * beta^k
+
+   Move types:
+     (a) Refine = swap two instances of the same physical type
+     (b) Explore = move one instance of a type to a FREE slot of that
+         same type, constrained to a shrinking window around the
+         instance’s current (x, y). If no free slot exists in the
+         window, we fall back to any free slot of that type.
+
+   - Accept moves with standard SA rule:
+       - accept if better (Δ <= 0)
+       - accept if worse with probability exp(-Δ / T)
+
+6) Writes the best placement found to out_map, with the same
+   "<inst_name> <slot_name>" format as the greedy placer.
+
+Usage example:
+
+    python3 simulated_annealing.py \
+        --data-structures build/6502/data_structures.json \
+        --initial-map build/6502/6502.map \
+        --out-map build/6502/6502_sa.map \
+        --num-temp-steps 60 \
+        --moves-per-temp 1000 \
+        --T-initial 200.0 \
+        --alpha 0.95 \
+        --P-refine 0.7 \
+        --W-initial 0.5 \
+        --beta 0.95 \
+        --seed 42
 """
 
 import argparse
@@ -72,7 +135,10 @@ def write_map(path: str, placement: Dict[str, str]) -> None:
 def compute_die_bbox(slot_info: Dict[str, Dict[str, Any]]) -> Tuple[float, float, float, float]:
     """
     Compute the die bounding box from all slots:
+
       returns (min_x, max_x, min_y, max_y)
+
+    Raises if slot_info is empty or lacks coordinates.
     """
     xs: List[float] = []
     ys: List[float] = []
@@ -97,10 +163,14 @@ def build_net_to_insts(instances: Dict[str, Any]) -> Dict[int, Set[str]]:
     """
     Build net_to_insts from logical.instances only, using pin bit IDs.
 
+    Each pin is an array of integers (bit IDs). Any pins that share the
+    same bit ID are considered connected on the same net (that bit).
+
     Returns:
         net_to_insts: bit_id (int) -> set of instance names that touch that bit.
     """
     from collections import defaultdict
+
     net_to_insts: Dict[int, Set[str]] = defaultdict(set)
 
     for inst_name, cell in instances.items():
@@ -109,6 +179,7 @@ def build_net_to_insts(instances: Dict[str, Any]) -> Dict[int, Set[str]]:
             if not isinstance(bit_list, list):
                 continue
             for bit in bit_list:
+                # bit is an integer per schema
                 net_to_insts[bit].add(inst_name)
 
     return net_to_insts
@@ -117,7 +188,7 @@ def build_net_to_insts(instances: Dict[str, Any]) -> Dict[int, Set[str]]:
 def build_type_index(instances: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
     """
     Build:
-        inst_type: inst_name -> physical cell type string
+        inst_type: inst_name -> physical cell type string (e.g. "sky130_fd_sc_hd__nand2_2")
         type_to_insts: ctype -> [inst_name, inst_name, ...]
     """
     from collections import defaultdict
@@ -143,6 +214,9 @@ def build_free_slots(
     """
     Build free slot lists per physical type by starting from all slots and
     removing those used in the current placement.
+
+    Returns:
+        free_slots_by_type: phys_type -> [slot_name, ...]
     """
     from collections import defaultdict
 
@@ -150,6 +224,7 @@ def build_free_slots(
     for inst_name, slot_name in placement.items():
         ctype = inst_type.get(inst_name)
         if ctype is None:
+            # If an instance in the map isn't in logical.instances, we simply skip it.
             continue
         used_slots_by_type[ctype].add(slot_name)
 
@@ -163,61 +238,26 @@ def build_free_slots(
     return free_slots_by_type
 
 
-# ---------------- HPWL + congestion cost computation ----------------
+# ---------------- HPWL cost computation ----------------
 
-def net_weight(deg: int, gamma: float) -> float:
-    """
-    Simple fanout-based weight:
-      w = 1 + gamma * log2(deg)
-    """
-    if deg <= 1:
-        return 1.0
-    if gamma <= 0.0:
-        return 1.0
-    return 1.0 + gamma * math.log2(float(deg))
-
-
-def clamp_int(v: int, lo: int, hi: int) -> int:
-    if v < lo:
-        return lo
-    if v > hi:
-        return hi
-    return v
-
-
-def coord_to_bin(x: float, x0: float, x1: float, nbins: int) -> int:
-    """
-    Map coordinate x in [x0, x1] to a bin index in [0, nbins-1].
-    """
-    if nbins <= 1 or x1 <= x0:
-        return 0
-    t = (x - x0) / (x1 - x0)  # can be outside [0,1]
-    idx = int(math.floor(t * nbins))
-    return clamp_int(idx, 0, nbins - 1)
-
-
-def compute_cost_components(
+def compute_total_hpwl(
     net_to_insts: Dict[int, Set[str]],
     slot_info: Dict[str, Dict[str, Any]],
     placement: Dict[str, str],
-    die_bbox: Tuple[float, float, float, float],
-    gamma: float,
-    bins_x: int,
-    bins_y: int,
-) -> Tuple[float, float]:
+) -> float:
     """
-    Compute:
-      - weighted_hpwl
-      - congestion_cost (sum of squared RUDY demands per bin)
+    Compute total half-perimeter wirelength (HPWL), summing over all nets.
+
+    For each net (bit): consider all instances that touch that net and have
+    a defined placement. Take their (x, y) from slot_info and compute:
+
+        HPWL_net = (max_x - min_x) + (max_y - min_y)
+
+    Nets with 0 or 1 placed instances contribute 0.
+
+    Returns:
+        total HPWL (float)
     """
-    min_x, max_x, min_y, max_y = die_bbox
-
-    # Demand grid (flattened)
-    if bins_x <= 0 or bins_y <= 0:
-        bins_x = 1
-        bins_y = 1
-    demand = [0.0] * (bins_x * bins_y)
-
     total_hpwl = 0.0
 
     for _bit_id, insts in net_to_insts.items():
@@ -231,78 +271,20 @@ def compute_cost_components(
             sinfo = slot_info.get(slot)
             if not sinfo:
                 continue
+
             x = sinfo.get("x")
             y = sinfo.get("y")
             if x is None or y is None:
                 continue
+
             xs.append(float(x))
             ys.append(float(y))
 
-        if len(xs) < 2:
-            continue
+        if len(xs) >= 2:
+            hpwl = (max(xs) - min(xs)) + (max(ys) - min(ys))
+            total_hpwl += hpwl
 
-        deg = len(xs)
-        w = net_weight(deg, gamma)
-
-        x_lo, x_hi = min(xs), max(xs)
-        y_lo, y_hi = min(ys), max(ys)
-
-        # Weighted HPWL
-        hpwl = (x_hi - x_lo) + (y_hi - y_lo)
-        total_hpwl += w * hpwl
-
-        # Congestion (RUDY on bins)
-        bx0 = coord_to_bin(x_lo, min_x, max_x, bins_x)
-        bx1 = coord_to_bin(x_hi, min_x, max_x, bins_x)
-        by0 = coord_to_bin(y_lo, min_y, max_y, bins_y)
-        by1 = coord_to_bin(y_hi, min_y, max_y, bins_y)
-
-        if bx0 > bx1:
-            bx0, bx1 = bx1, bx0
-        if by0 > by1:
-            by0, by1 = by1, by0
-
-        area = (bx1 - bx0 + 1) * (by1 - by0 + 1)
-        if area <= 0:
-            continue
-
-        add = w / float(area)
-        for by in range(by0, by1 + 1):
-            row = by * bins_x
-            for bx in range(bx0, bx1 + 1):
-                demand[row + bx] += add
-
-    cong = 0.0
-    for d in demand:
-        cong += d * d
-
-    return total_hpwl, cong
-
-
-def compute_total_cost(
-    net_to_insts: Dict[int, Set[str]],
-    slot_info: Dict[str, Dict[str, Any]],
-    placement: Dict[str, str],
-    die_bbox: Tuple[float, float, float, float],
-    gamma: float,
-    bins_x: int,
-    bins_y: int,
-    lambda_cong: float,
-) -> Tuple[float, float, float]:
-    """
-    Returns (total_cost, weighted_hpwl, congestion_cost)
-    """
-    hpwl, cong = compute_cost_components(
-        net_to_insts=net_to_insts,
-        slot_info=slot_info,
-        placement=placement,
-        die_bbox=die_bbox,
-        gamma=gamma,
-        bins_x=bins_x,
-        bins_y=bins_y,
-    )
-    total = hpwl + lambda_cong * cong
-    return total, hpwl, cong
+    return total_hpwl
 
 
 # ---------------- SA move generation ----------------
@@ -314,6 +296,16 @@ def choose_type_with_insts(
     require_two_insts: bool = False,
     require_free_slot: bool = False,
 ) -> str:
+    """
+    Choose a physical type that satisfies constraints:
+      - exists in type_to_insts (has logical instances)
+      - has slots in slots_by_phys_type
+      - if require_two_insts: len(type_to_insts[ctype]) >= 2
+      - if require_free_slot: free_slots_by_type[ctype] is non-empty
+
+    Returns:
+      chosen type string, or raises RuntimeError if none exist.
+    """
     candidates: List[str] = []
 
     for ctype, insts in type_to_insts.items():
@@ -338,6 +330,13 @@ def propose_swap_move(
     slots_by_phys_type: Dict[str, List[str]],
     free_slots_by_type: Dict[str, List[str]],
 ) -> Tuple[str, Tuple[str, str, str, str]]:
+    """
+    Refine move: swap between two instances of the same type.
+
+    Returns:
+        ("swap", (inst1, slot1, inst2, slot2))
+    """
+    # Pick a type with at least two instances and at least one slot.
     ctype = choose_type_with_insts(
         type_to_insts,
         slots_by_phys_type,
@@ -351,6 +350,7 @@ def propose_swap_move(
     slot1 = placement[inst1]
     slot2 = placement[inst2]
 
+    # Apply swap
     placement[inst1], placement[inst2] = slot2, slot1
 
     move_data = (inst1, slot1, inst2, slot2)
@@ -361,6 +361,10 @@ def revert_swap_move(
     placement: Dict[str, str],
     move_data: Tuple[str, str, str, str],
 ) -> None:
+    """
+    Undo a swap move.
+    move_data = (inst1, old_slot1, inst2, old_slot2)
+    """
     inst1, old_slot1, inst2, old_slot2 = move_data
     placement[inst1] = old_slot1
     placement[inst2] = old_slot2
@@ -376,10 +380,29 @@ def propose_move_to_free_slot(
     W: float,
     die_bbox: Tuple[float, float, float, float],
 ) -> Tuple[str, Tuple[str, str, str, str]]:
+    """
+    Explore move: move a single instance of some type to a free slot
+    of that same type, limited by a window of size W relative to the
+    die dimensions.
+
+    W is interpreted as a fraction of die width/height:
+      - die_width  = max_x - min_x
+      - die_height = max_y - min_y
+      - allowed box around current (x,y):
+            |x_new - x_cur| <= 0.5 * W * die_width
+            |y_new - y_cur| <= 0.5 * W * die_height
+
+    If no free slot exists in that window, we fall back to any free slot
+    of that type.
+
+    Returns:
+        ("move_free", (inst, old_slot, new_slot, ctype))
+    """
     min_x, max_x, min_y, max_y = die_bbox
     die_width = max_x - min_x
     die_height = max_y - min_y
 
+    # Pick a type that has at least one instance AND at least one free slot.
     ctype = choose_type_with_insts(
         type_to_insts,
         slots_by_phys_type,
@@ -394,6 +417,7 @@ def propose_move_to_free_slot(
     old_slot = placement[inst]
     free_slots = free_slots_by_type[ctype]
 
+    # Default candidate set
     candidate_slots = free_slots
 
     if W > 0.0 and die_width > 0.0 and die_height > 0.0:
@@ -421,9 +445,12 @@ def propose_move_to_free_slot(
             if window_candidates:
                 candidate_slots = window_candidates
 
+    # Pick a free slot randomly from candidate set
     new_slot = random.choice(candidate_slots)
 
+    # Apply move: update placement and free slots
     placement[inst] = new_slot
+    # new_slot no longer free; old_slot becomes free
     free_slots.remove(new_slot)
     free_slots.append(old_slot)
 
@@ -436,13 +463,21 @@ def revert_move_to_free_slot(
     free_slots_by_type: Dict[str, List[str]],
     move_data: Tuple[str, str, str, str],
 ) -> None:
+    """
+    Undo a move-to-free-slot move.
+    move_data = (inst, old_slot, new_slot, ctype)
+    """
     inst, old_slot, new_slot, ctype = move_data
 
+    # Restore placement
     placement[inst] = old_slot
 
+    # Update free slots
     free_slots = free_slots_by_type[ctype]
+    # Remove old_slot (it was added as free in propose; now it's used again)
     if old_slot in free_slots:
         free_slots.remove(old_slot)
+    # new_slot becomes free again
     if new_slot not in free_slots:
         free_slots.append(new_slot)
 
@@ -461,13 +496,36 @@ def simulated_annealing(
     P_refine: float,
     W_initial: float,
     beta: float,
-    gamma: float,
-    lambda_cong: float,
-    lambda_growth: float,
-    cong_bins_x: int,
-    cong_bins_y: int,
     report_interval: int = 1000,
 ) -> Tuple[Dict[str, str], float]:
+    """
+    Run simulated annealing to optimize HPWL with the lecture knobs:
+
+      - T_initial
+      - Cooling Rate alpha (T_{k+1} = alpha * T_k)
+      - Moves per Temp N (moves_per_temp)
+      - P_refine vs P_explore = 1 - P_refine
+      - W_initial (fraction of die size)
+      - Window Cooling Rate beta (W_k = W_initial * beta^k)
+
+    Arguments:
+        instances          : logical.instances
+        slot_info          : fabric.slot_info
+        slots_by_phys_type : fabric.slots_by_phys_type
+        initial_placement  : inst_name -> slot_name from greedy
+        num_temp_steps     : number of temperature steps
+        T_initial          : initial temperature
+        alpha              : temperature cooling rate
+        moves_per_temp     : N moves per temperature step
+        P_refine           : probability of refine (swap) move
+                             P_explore = 1 - P_refine
+        W_initial          : initial window size fraction
+        beta               : window cooling rate
+        report_interval    : print progress every ~report_interval moves
+
+    Returns:
+        (best_placement, best_cost)
+    """
     if num_temp_steps <= 0 or moves_per_temp <= 0:
         raise ValueError("num_temp_steps and moves_per_temp must be positive integers.")
     if T_initial <= 0.0:
@@ -480,12 +538,6 @@ def simulated_annealing(
         raise ValueError("W_initial must be in [0, 1] (fraction of die size).")
     if not (0.0 < beta <= 1.0):
         raise ValueError("beta must be in (0, 1].")
-    if lambda_cong < 0.0:
-        raise ValueError("lambda_cong must be >= 0.")
-    if lambda_growth <= 0.0:
-        raise ValueError("lambda_growth must be > 0.")
-    if cong_bins_x <= 0 or cong_bins_y <= 0:
-        raise ValueError("cong_bins_x and cong_bins_y must be positive integers.")
 
     total_moves = num_temp_steps * moves_per_temp
 
@@ -503,91 +555,99 @@ def simulated_annealing(
     min_x, max_x, min_y, max_y = die_bbox
     print(f"[INFO] Die bbox: x=[{min_x:.3f}, {max_x:.3f}], y=[{min_y:.3f}, {max_y:.3f}]")
 
+    # Check that all placed instances are known in instances
     missing_insts = [inst for inst in initial_placement if inst not in instances]
     if missing_insts:
         print(f"[WARN] {len(missing_insts)} instances in initial map are not in logical.instances. "
               f"They will be ignored in cost (but still placed).")
 
+    # Current solution
     placement: Dict[str, str] = dict(initial_placement)
-
-    # Initial cost (k=0 lambda)
-    lambda_k = lambda_cong * (lambda_growth ** 0)
-    current_cost, current_hpwl, current_cong = compute_total_cost(
-        net_to_insts, slot_info, placement, die_bbox,
-        gamma=gamma, bins_x=cong_bins_x, bins_y=cong_bins_y,
-        lambda_cong=lambda_k,
-    )
+    current_cost = compute_total_hpwl(net_to_insts, slot_info, placement)
     best_placement: Dict[str, str] = dict(placement)
     best_cost = current_cost
-    best_hpwl = current_hpwl
-    best_cong = current_cong
 
-    print(f"[INFO] Initial cost: total={current_cost:.3f} hpwl={current_hpwl:.3f} cong={current_cong:.3f} "
-          f"(lambda={lambda_k:.6f}, bins={cong_bins_x}x{cong_bins_y}, gamma={gamma})")
-    print(f"[INFO] SA schedule: num_temp_steps={num_temp_steps}, moves_per_temp={moves_per_temp}, "
-          f"T_initial={T_initial}, alpha={alpha}, W_initial={W_initial}, beta={beta}, "
-          f"P_refine={P_refine:.3f}, P_explore={1.0 - P_refine:.3f}, "
-          f"lambda_cong={lambda_cong}, lambda_growth={lambda_growth}")
+    print(f"[INFO] Initial HPWL cost: {current_cost:.3f}")
+    print(f"[INFO] SA schedule: num_temp_steps={num_temp_steps}, "
+          f"moves_per_temp={moves_per_temp}, T_initial={T_initial}, alpha={alpha}, "
+          f"W_initial={W_initial}, beta={beta}, P_refine={P_refine:.3f}, "
+          f"P_explore={1.0 - P_refine:.3f}")
 
     move_counter = 0
 
     for k in range(num_temp_steps):
+        # Temperature and window size for this step
         T_k = T_initial * (alpha ** k)
         W_k = W_initial * (beta ** k)
-        lambda_k = lambda_cong * (lambda_growth ** k)
 
         for _ in range(moves_per_temp):
             move_counter += 1
 
+            # Decide move type based on P_refine vs P_explore
             use_refine = (random.random() < P_refine)
             if use_refine:
+                # Try swap; if impossible, fall back to explore
                 try:
                     move_kind, move_data = propose_swap_move(
-                        placement, inst_type, type_to_insts, slots_by_phys_type, free_slots_by_type
+                        placement,
+                        inst_type,
+                        type_to_insts,
+                        slots_by_phys_type,
+                        free_slots_by_type,
                     )
                 except RuntimeError:
                     move_kind, move_data = propose_move_to_free_slot(
-                        placement, inst_type, type_to_insts, slots_by_phys_type,
-                        free_slots_by_type, slot_info, W_k, die_bbox
+                        placement,
+                        inst_type,
+                        type_to_insts,
+                        slots_by_phys_type,
+                        free_slots_by_type,
+                        slot_info,
+                        W_k,
+                        die_bbox,
                     )
             else:
+                # Try explore (move-to-windowed-free-slot); if impossible, fall back to swap
                 try:
                     move_kind, move_data = propose_move_to_free_slot(
-                        placement, inst_type, type_to_insts, slots_by_phys_type,
-                        free_slots_by_type, slot_info, W_k, die_bbox
+                        placement,
+                        inst_type,
+                        type_to_insts,
+                        slots_by_phys_type,
+                        free_slots_by_type,
+                        slot_info,
+                        W_k,
+                        die_bbox,
                     )
                 except RuntimeError:
                     move_kind, move_data = propose_swap_move(
-                        placement, inst_type, type_to_insts, slots_by_phys_type, free_slots_by_type
+                        placement,
+                        inst_type,
+                        type_to_insts,
+                        slots_by_phys_type,
+                        free_slots_by_type,
                     )
 
-            new_cost, new_hpwl, new_cong = compute_total_cost(
-                net_to_insts, slot_info, placement, die_bbox,
-                gamma=gamma, bins_x=cong_bins_x, bins_y=cong_bins_y,
-                lambda_cong=lambda_k,
-            )
+            # Compute new cost
+            new_cost = compute_total_hpwl(net_to_insts, slot_info, placement)
             delta = new_cost - current_cost
 
+            # Decide acceptance
             accept = False
             if delta <= 0:
                 accept = True
             else:
-                # Guard tiny/zero temperature
-                if T_k > 1e-12:
-                    prob = math.exp(-delta / T_k)
-                    if random.random() < prob:
-                        accept = True
+                prob = math.exp(-delta / T_k)
+                if random.random() < prob:
+                    accept = True
 
             if accept:
                 current_cost = new_cost
-                current_hpwl = new_hpwl
-                current_cong = new_cong
                 if new_cost < best_cost:
                     best_cost = new_cost
-                    best_hpwl = new_hpwl
-                    best_cong = new_cong
                     best_placement = dict(placement)
             else:
+                # Revert move
                 if move_kind == "swap":
                     revert_swap_move(placement, move_data)  # type: ignore[arg-type]
                 elif move_kind == "move_free":
@@ -595,18 +655,18 @@ def simulated_annealing(
                 else:
                     raise RuntimeError(f"Unknown move kind {move_kind!r}")
 
+            # Optional progress report
             if report_interval > 0 and (
                 move_counter % report_interval == 0 or move_counter == total_moves
             ):
                 print(
                     f"[SA] move={move_counter}/{total_moves} "
                     f"temp_step={k+1}/{num_temp_steps} "
-                    f"T={T_k:.4f} W={W_k:.4f} lambda={lambda_k:.6f} "
-                    f"cur_total={current_cost:.3f} cur_hpwl={current_hpwl:.3f} cur_cong={current_cong:.3f} "
-                    f"best_total={best_cost:.3f}"
+                    f"T={T_k:.4f} W={W_k:.4f} "
+                    f"current_cost={current_cost:.3f} best_cost={best_cost:.3f}"
                 )
 
-    print(f"[INFO] SA finished. Best cost: total={best_cost:.3f} hpwl={best_hpwl:.3f} cong={best_cong:.3f}")
+    print(f"[INFO] SA finished. Best HPWL cost: {best_cost:.3f}")
     return best_placement, best_cost
 
 
@@ -615,49 +675,90 @@ def simulated_annealing(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Simulated Annealing placer using data_structures.json and greedy map "
-                    "with HPWL + congestion (RUDY bins)."
+                    "with T_initial, alpha, N, P_refine/P_explore, W_initial, and beta."
     )
-    p.add_argument("--data-structures", required=True, help="Path to data_structures.json.")
-    p.add_argument("--initial-map", required=True, help="Path to initial greedy map file.")
-    p.add_argument("--out-map", required=True, help="Path to write the SA-optimized map file.")
+    p.add_argument(
+        "--data-structures",
+        required=True,
+        help="Path to data_structures.json (from dataStructuresGenerator.py).",
+    )
+    p.add_argument(
+        "--initial-map",
+        required=True,
+        help="Path to initial greedy map file (inst -> slot).",
+    )
+    p.add_argument(
+        "--out-map",
+        required=True,
+        help="Path to write the SA-optimized map file.",
+    )
 
     # Annealing schedule
-    p.add_argument("--num-temp-steps", type=int, default=1000,
-                   help="Number of temperature steps.")
-    p.add_argument("--moves-per-temp", type=int, default=150,
-                   help="Moves per temperature step N.")
-    p.add_argument("--T-initial", dest="T_initial", type=float, default=4000000.0,
-                   help="Initial temperature T_initial.")
-    p.add_argument("--alpha", type=float, default=0.80,
-                   help="Cooling rate alpha (T_{k+1} = alpha * T_k).")
+    p.add_argument(
+        "--num-temp-steps",
+        type=int,
+        default=1000,
+        help="Number of temperature steps (default: 60).",
+    )
+    p.add_argument(
+        "--moves-per-temp",
+        type=int,
+        default=150,
+        help="Moves per temperature step N (default: 1000).",
+    )
+    p.add_argument(
+        "--T-initial",
+        dest="T_initial",
+        type=float,
+        default=4000000.0,
+        help="Initial temperature T_initial (default: 200.0).",
+    )
+    p.add_argument(
+        "--alpha",
+        type=float,
+        default=0.80,
+        help="Cooling rate alpha (T_{k+1} = alpha * T_k), default: 0.95.",
+    )
 
     # Hybrid move set
-    p.add_argument("--P-refine", dest="P_refine", type=float, default=0.9,
-                   help="Probability of refine (swap) move; explore = 1 - P_refine.")
+    p.add_argument(
+        "--P-refine",
+        dest="P_refine",
+        type=float,
+        default=0.9,
+        help="Probability P_refine of choosing a refine (swap) move; "
+             "P_explore = 1 - P_refine (default: 0.7).",
+    )
 
     # Exploration window
-    p.add_argument("--W-initial", dest="W_initial", type=float, default=0.3,
-                   help="Initial exploration window fraction.")
-    p.add_argument("--beta", type=float, default=0.90,
-                   help="Window cooling rate beta.")
-
-    # ---- NEW: HPWL weighting + congestion knobs ----
-    p.add_argument("--gamma", type=float, default=0.75,
-                   help="Net weight strength for weighted HPWL: w=1+gamma*log2(deg). (default: 0.75)")
-    p.add_argument("--lambda-cong", dest="lambda_cong", type=float, default=0.10,
-                   help="Congestion weight λ in total = hpwl + λ*cong. (default: 0.10)")
-    p.add_argument("--lambda-growth", dest="lambda_growth", type=float, default=1.00,
-                   help="Multiply λ each temp step: λ_k = λ0*(growth^k). (default: 1.00)")
-    p.add_argument("--cong-bins-x", type=int, default=30,
-                   help="Congestion grid bins in X. (default: 30)")
-    p.add_argument("--cong-bins-y", type=int, default=30,
-                   help="Congestion grid bins in Y. (default: 30)")
+    p.add_argument(
+        "--W-initial",
+        dest="W_initial",
+        type=float,
+        default=0.3,
+        help="Initial exploration window size W_initial as fraction of die width/height "
+             "(default: 0.5).",
+    )
+    p.add_argument(
+        "--beta",
+        type=float,
+        default=0.90,
+        help="Window cooling rate beta (W_k = W_initial * beta^k), default: 0.95.",
+    )
 
     # Misc
-    p.add_argument("--report-interval", type=int, default=1000,
-                   help="Print SA progress every N moves.")
-    p.add_argument("--seed", type=int, default=42,
-                   help="Random seed for reproducibility (0 means system randomness).")
+    p.add_argument(
+        "--report-interval",
+        type=int,
+        default=1000,
+        help="Print SA progress every N moves (default: 1000).",
+    )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 0; 0 means use system randomness).",
+    )
 
     return p.parse_args()
 
@@ -676,17 +777,22 @@ def main() -> None:
 
     logical = ds.get("logical")
     fabric = ds.get("fabric")
+
     if logical is None or fabric is None:
         raise ValueError("data_structures.json must contain top-level keys 'logical' and 'fabric'.")
 
+    # logical.instances is the dict built by dataStructuresGenerator
     instances = logical.get("instances")
     if not isinstance(instances, dict):
+        # Fallback in case you ever change the schema name
         instances = logical.get("cells")
+
     if not isinstance(instances, dict):
         raise ValueError("'logical.instances' or 'logical.cells' must be a dict in data_structures.json.")
 
     slots_by_phys_type = fabric.get("slots_by_phys_type")
     slot_info = fabric.get("slot_info")
+
     if not isinstance(slots_by_phys_type, dict):
         raise ValueError("'fabric.slots_by_phys_type' must be a dict in data_structures.json.")
     if not isinstance(slot_info, dict):
@@ -695,9 +801,11 @@ def main() -> None:
     print(f"[INFO] Loading initial placement map from '{args.initial_map}'...")
     initial_placement = load_map(args.initial_map)
 
+    # Basic sanity check: number of placed instances vs logical.instances
     print(f"[INFO] logical.instances: {len(instances)} entries.")
     print(f"[INFO] initial_placement: {len(initial_placement)} entries.")
 
+    # Run SA with the lecture-style knobs
     best_placement, best_cost = simulated_annealing(
         instances=instances,
         slot_info=slot_info,
@@ -710,14 +818,10 @@ def main() -> None:
         P_refine=args.P_refine,
         W_initial=args.W_initial,
         beta=args.beta,
-        gamma=args.gamma,
-        lambda_cong=args.lambda_cong,
-        lambda_growth=args.lambda_growth,
-        cong_bins_x=args.cong_bins_x,
-        cong_bins_y=args.cong_bins_y,
         report_interval=args.report_interval,
     )
 
+    # Write best map
     print("[INFO] Writing best placement map...")
     write_map(args.out_map, best_placement)
     print("[INFO] Done.")
