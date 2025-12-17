@@ -127,35 +127,53 @@ def build_physical_db(fab: Dict[str, Any], default_w: float, default_h: float) -
     site_w_um, site_h_um = get_site_dims_um(fab, default_w, default_h)
     db = {}
 
-    tiles = fab.get("tiles", [])
-    for t in tiles:
-        # Support both 'cells' and 'gates'
-        cells = t.get("cells", t.get("gates", []))
+    def add_gate(g: Dict[str, Any]) -> None:
+        phys_name = g.get("name")
+        if not phys_name:
+            return
 
-        for g in cells:
-            phys_name = g.get("name")
-            if not phys_name: continue
+        # Dimensions
+        w_sites = g.get("width_sites", None)
+        if w_sites is not None:
+            w_um = float(w_sites) * site_w_um
+        else:
+            w_um = float(g.get("w", default_w))
 
-            # Dimensions
-            w_sites = g.get("width_sites", None)
-            if w_sites is not None:
-                w_um = float(w_sites) * site_w_um
-            else:
-                w_um = float(g.get("w", default_w))
+        h_um = float(g.get("h", site_h_um))
+        x_um = float(g.get("x", g.get("x_um", 0.0)))
+        y_um = float(g.get("y", g.get("y_um", 0.0)))
 
-            h_um = float(site_h_um)
-            x_um = float(g.get("x", g.get("x_um", 0.0)))
-            y_um = float(g.get("y", g.get("y_um", 0.0)))
+        # Center coordinates for line drawing
+        cx = x_um + (w_um / 2)
+        cy = y_um + (h_um / 2)
 
-            # Center coordinates for line drawing
-            cx = x_um + (w_um / 2)
-            cy = y_um + (h_um / 2)
+        db[phys_name] = {
+            "x": x_um, "y": y_um, "w": w_um, "h": h_um,
+            "cx": cx, "cy": cy,
+            "type": clean_type_name(g.get("physical_cell_type", g.get("type", "UNK")))
+        }
 
-            db[phys_name] = {
-                "x": x_um, "y": y_um, "w": w_um, "h": h_um,
-                "cx": cx, "cy": cy,
-                "type": clean_type_name(g.get("physical_cell_type", g.get("type", "UNK")))
-            }
+    # Supported fabric formats:
+    # 1) tiles-based: {"tiles": [{"cells": [...]}, ...]}
+    # 2) raw slot dict: {"TAP": [{...}], "BUF": [{...}], ...}
+    tiles = fab.get("tiles", None)
+    if isinstance(tiles, list) and tiles:
+        for t in tiles:
+            # Support both 'cells' and 'gates'
+            cells = t.get("cells", t.get("gates", []))
+            for g in cells:
+                if isinstance(g, dict):
+                    add_gate(g)
+        return db
+
+    # Raw slot dict format
+    if isinstance(fab, dict):
+        for _, slots in fab.items():
+            if not isinstance(slots, list):
+                continue
+            for g in slots:
+                if isinstance(g, dict):
+                    add_gate(g)
     return db
 
 
@@ -352,7 +370,7 @@ def main():
         return
 
     # 2. Process Fabric
-    # We ignore "visualizing ALL slots" in favor of just the occupied ones for clarity?
+    # We ignore "visualizing ALL slots" in favor of just the occupied ones for clarity? 
     # Or we build the DB of all slots so we can look up coordinates.
     phys_db = build_physical_db(fab, args.slot_w, args.slot_h)
 
@@ -363,7 +381,7 @@ def main():
     for k, v in phys_db.items():
         slots_list.append(v)
 
-    # We filter slots_list to only those in the mapping for tighter bounds?
+    # We filter slots_list to only those in the mapping for tighter bounds? 
     # Or just use all. Let's use all to show full die.
     die_um, core_um = infer_die_core(fab, slots_list)
 

@@ -197,23 +197,15 @@ $(FINAL_NETLIST): $(MAP_FILE) $(ECO_SCRIPTS)
 	@echo "========================================"
 	@echo
 
-	@echo "[1/5] Running eco_generator.py (CTS + power-down ECO)..."
+	@echo "[1/3] Running eco_generator.py (CTS + power-down ECO)..."
 	@$(PYTHON) src/eco_generator.py --design "$(DESIGN)"
 
 	@echo
-	@echo "[2/5] Running generate_verilog.py..."
+	@echo "[2/3] Running generate_verilog.py..."
 	@$(PYTHON) src/generate_verilog.py --design "$(DESIGN)"
 
 	@echo
-	@echo "[3/5] Running generate_pd_eco.py..."
-	@$(PYTHON) src/generate_pd_eco.py --design "$(DESIGN)"
-
-	@echo
-	@echo "[4/5] Running animated_eco_pd.py..."
-	@$(PYTHON) src/animated_eco_pd.py --design "$(DESIGN)" --animate
-
-	@echo
-	@echo "[5/5] Running visualize_cts.py..."
+	@echo "[3/3] Running visualize_cts.py..."
 	@$(PYTHON) src/visualize_cts.py \
 	  --fabric "build/fabric/fabric_db.json" \
 	  --map "build/$(DESIGN)/$(DESIGN)_sa.map" \
