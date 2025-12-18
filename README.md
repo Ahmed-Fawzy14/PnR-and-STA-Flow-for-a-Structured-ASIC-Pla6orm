@@ -89,26 +89,38 @@ This project implements an automated **PnR + STA** flow for a **Structured ASIC*
 ## 4) SA Knob Analysis (Required)
 
 ### Plot
-![SA Knob Analysis](sa_knob_analysis.png)
+  <img width="2382" height="1580" alt="image" src="https://github.com/user-attachments/assets/8970588d-fea6-4644-a5ea-4ff263af145c" />
 
-### Recommended Default SA Knobs
-*(Fill in with your chosen defaults from the knob sweep.)*
-- `T_initial = <TODO>`
-- `alpha = <TODO>`
-- `moves_per_temp = <TODO>`
-- `num_temp_steps = <TODO>`
-- `seed = <TODO>`
 
----
+Based on the knob analysis results (Pareto trade-off between HPWL and runtime), we recommend the following **default** SA settings:
 
+- **`T_initial`**: `4_000_000`
+- **`alpha`**: `0.80`
+- **`num_temp_steps`**: `250`
+- **`moves_per_temp`**: `1000`
+- **`P_refine`**: `0.90`
+- **`W_initial`**: `0.30`
+- **`beta`**: `0.90`
+- **`seed`**: `42` (for reproducibility)
+
+#### Rationale
+
+- **Quality:** Across the sweep, `alpha = 0.80` consistently produced the best (or near-best) HPWL compared to more aggressive cooling (higher `alpha`) that can “freeze” too early.
+- **Stability/Refinement:** A higher `P_refine` (0.90) improved HPWL by spending more moves in local improvement/refinement once the search is in a good region.
+- **Exploration window:** `W_initial = 0.30` with `beta = 0.90` maintained enough early exploration without making the search too random late in the schedule.
+- **Runtime vs QoR trade-off:** Increasing `num_temp_steps` improves HPWL but increases runtime. `num_temp_steps = 250` is a good **default** because it captures most of the HPWL gains seen at larger step counts (e.g., 350/500) while keeping runtime reasonable.
+
+> Note: If runtime is the primary constraint, a “fast” preset would use `num_temp_steps = 60`. If maximum QoR is the primary goal, increasing to `num_temp_steps = 350–500` can further reduce HPWL at additional runtime cost. 
 ## 5) Regression Suite Comparison Dashboard
 
-| Design Name | Util % | Placer Alg. | HPWL (km) | WNS (ns) | TNS (ns) |
+| Design Name | Util % | Placer Alg. | HPWL (mm) | WNS (ns) | TNS (ns) |
 |---|---:|---|---:|---:|---:|
 | Arith | 0.40% | Greedy+SA | 77.45786 | N/A | N/A |
 | aes_128 | 75.70% | Greedy+SA | 12487725.800 | N/A | N/A |
 | soc | 62.01% | Greedy+SA | 23529099.160 | N/A | N/A |
-
+| 6502 | ..% | Greedy+SA | 243.71 | ... | ... |
+| Arith | ..% | Greedy+SA | 12.82 | ... | ... |
+| Z80 | ..% | Greedy+SA |  | 1256.984 | ... |
 **Notes**
 - **Util %** is computed from the Fabric Utilization Report: total used instances / total available fabric slots.
 - **WNS/TNS** are listed as **N/A** here because STA outputs (`*_setup.rpt`) are not present in the current build artifacts.
