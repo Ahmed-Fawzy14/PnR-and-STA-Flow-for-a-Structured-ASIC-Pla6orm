@@ -106,6 +106,8 @@ This project implements an automated **PnR + STA** flow for a **Structured ASIC*
 | Design Name | Util % | Placer Alg. | HPWL (km) | WNS (ns) | TNS (ns) |
 |---|---:|---|---:|---:|---:|
 | Arith | 0.40% | Greedy+SA | 77.45786 | N/A | N/A |
+| aes_128 | 75.70% | Greedy+SA | 12487725.800 | N/A | N/A |
+| soc | 62.01% | Greedy+SA | 23529099.160 | N/A | N/A |
 
 **Notes**
 - **Util %** is computed from the Fabric Utilization Report: total used instances / total available fabric slots.
