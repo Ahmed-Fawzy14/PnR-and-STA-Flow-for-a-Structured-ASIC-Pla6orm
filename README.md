@@ -1,4 +1,4 @@
-# Structured ASIC Flow — Final Report (Markdown)
+# Structured ASIC Flow — Final Report
 
 ## 1) How to Run (Makefile)
 
