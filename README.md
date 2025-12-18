@@ -118,8 +118,8 @@ Based on the knob analysis results (Pareto trade-off between HPWL and runtime), 
 | Arith | 0.40% | Greedy+SA | 12.82 | N/A | N/A |
 | aes_128 | 75.70% | Greedy+SA | 12487725.800 | N/A | N/A |
 | soc | 62.01% | Greedy+SA | 23529099.160 | N/A | N/A |
-| 6502 | ..% | Greedy+SA | 243.71 | ... | ... |
-| Z80 | ..% | Greedy+SA |  | 1256.984 | ... |
+| 6502 | 2.55% | Greedy+SA | 243.71 | N/A | N/A |
+| Z80 | ..% | Greedy+SA |  | 1256.984 | N/A |
 **Notes**
 - **Util %** is computed from the Fabric Utilization Report: total used instances / total available fabric slots.
 - **WNS/TNS** are listed as **N/A** here because STA outputs (`*_setup.rpt`) are not present in the current build artifacts.
