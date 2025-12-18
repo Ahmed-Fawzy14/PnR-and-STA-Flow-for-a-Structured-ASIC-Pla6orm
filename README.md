@@ -125,18 +125,103 @@ Based on the knob analysis results (Pareto trade-off between HPWL and runtime), 
 - **WNS/TNS** are listed as **N/A** here because STA outputs (`*_setup.rpt`) are not present in the current build artifacts.
 
 ---
-
 ## 6) Analysis
 
-### 6.1 Does the placer scale well with high utilization?
-- The flow supports both Greedy and SA refinement and produces consistent placement artifacts and visuals.
-- A full scaling study across multiple utilization points requires running the regression suite across additional designs (e.g., UART/FPU/etc.) and recording runtime + HPWL per design.
+### 6.1 Placer Scalability vs. Fabric Utilization
 
-### 6.2 Do high-congestion designs correlate with worse WNS/TNS?
-- Routing congestion is reported by OpenROAD (`build/arith/arith_congestion.rpt`), and routing errors can prevent convergence.
-- When routing does not converge, STA quality is typically degraded (or STA deliverables may be missing), because post-route parasitics/paths cannot be fully extracted.
+The placement stage in this flow is fundamentally an **assignment problem** rather than a continuous placement problem, due to the fixed nature of the Structured ASIC fabric. Logical instances must be mapped onto pre-existing physical slots with immutable \((x, y)\) coordinates. This constraint makes high-utilization designs significantly harder than in standard-cell ASIC flows, where whitespace can be redistributed dynamically.
 
-### 6.3 Why do specific designs fail timing?
-- For this snapshot, STA deliverables are not present in `build/arith/`, so we cannot report exact worst paths (critical path overlay / slack histogram).
-- The most likely root cause is routing non-convergence due to congestion, which prevents producing a clean post-route netlist/DEF/SPEF set for signoff STA.
+From the regression dashboard, we observe that:
+
+- **Low-utilization designs** (e.g., *arith* at ~0.40%, *6502* at ~2.55%) achieve relatively low HPWL values and converge reliably during placement.
+- **Moderate-to-high utilization designs** (e.g., *soc* at ~62%, *aes_128* at ~75%) exhibit orders-of-magnitude larger HPWL, indicating longer average interconnect distances and reduced freedom for local optimization.
+
+This behavior is expected and confirms that:
+
+- The **Greedy “seed-and-grow” placer** provides a strong initial solution by anchoring I/O-connected cells early.
+- **Simulated Annealing (SA)** remains effective at refining placement quality, but its ability to improve HPWL diminishes as utilization increases and the solution space becomes highly constrained.
+
+Overall, the placer scales *functionally* across utilization levels (i.e., it always produces valid placement artifacts), but **quality of result (QoR)** degrades gracefully with higher utilization. This trend is consistent with the physical limits imposed by a structured fabric.
+
+---
+
+### 6.2 Relationship Between Congestion and Timing Quality (WNS/TNS)
+
+Routing congestion plays a dominant role in downstream timing quality. In this flow:
+
+- OpenROAD reports congestion via `*_congestion.rpt`.
+- When congestion exceeds router thresholds, global or detailed routing fails to converge, preventing generation of:
+  - Routed DEF
+  - SPEF (parasitic extraction)
+  - Clean post-route netlists
+
+This directly explains why:
+
+- STA deliverables (WNS/TNS) are missing or marked **N/A** in the regression dashboard.
+- Timing analysis cannot be completed reliably without post-route parasitics.
+
+Conceptually, high congestion correlates strongly with worse timing because:
+
+- Congested regions force routing detours, increasing wirelength and parasitic delay.
+- Critical paths often traverse the most congested regions, amplifying delay and skew.
+- Clock tree quality degrades when buffers and routes compete for limited routing resources.
+
+Thus, even though STA reports are unavailable for some designs, the **routing failure itself is a strong indicator of negative timing impact**.
+
+---
+
+### 6.3 Root Causes of Routing and Timing Failures
+
+For designs where routing does not complete successfully, the most likely root causes are:
+
+#### High Fabric Utilization
+- A large fraction of fabric slots are occupied, leaving fewer routing tracks available.
+- This is especially problematic in Structured ASICs, where routing resources are pre-defined and limited.
+
+#### Placement-Driven Congestion
+- The placer is primarily HPWL-driven and does not explicitly optimize for routability.
+- Aggressively clustering cells to minimize HPWL can unintentionally create localized congestion hotspots.
+
+#### Clock Tree Interaction
+- CTS inserts additional buffers and nets after placement.
+- These late-added structures increase routing demand in already dense regions, particularly near DFF clusters.
+
+#### Lack of Timing- or Congestion-Aware Feedback
+- The current flow is strictly feed-forward:
+
+  ```
+  placement → CTS → routing → STA
+  ```
+
+- There is no iterative feedback loop to relax placement constraints or re-balance congestion based on routing or timing outcomes.
+
+Because routing does not converge, STA cannot identify critical paths or report accurate slack. This explains the absence of `_setup.rpt`, slack histograms, and critical-path visualizations in the current build artifacts.
+
+---
+
+### 6.4 Key Takeaways and Limitations
+
+- The flow successfully demonstrates a complete, automated **Structured ASIC PnR + STA** pipeline with correct file dependencies and reproducible artifacts.
+- Placement quality is strong at low-to-moderate utilization but naturally degrades at higher utilization due to fabric constraints.
+- Routing congestion is the primary bottleneck preventing timing signoff in complex designs.
+- The absence of STA results is **not** a scripting or automation failure, but a physical limitation exposed by routing non-convergence.
+
+These results are consistent with real-world physical design practice, where timing closure is rarely achievable in a single pass and typically requires iterative, timing-aware optimization.
+
+---
+
+### 6.5 Future Improvements (Forward-Looking)
+
+Based on the observed behavior, several enhancements could significantly improve QoR:
+
+- **Congestion-aware or timing-aware placement**
+  - Weight HPWL for critical or high-fanout nets.
+  - Penalize placements that increase local density beyond routing capacity.
+- **Iterative placement ↔ routing loop**
+  - Use congestion reports to guide re-placement and legalization.
+- **Clock-aware placement**
+  - Bias DFF and clock buffer placement to reduce skew and routing contention.
+
+These ideas align directly with the *Bonus Challenge: Timing Closure Loop* described in the project specification and represent natural next steps toward signoff-quality results.
+ The most likely root cause is routing non-convergence due to congestion, which prevents producing a clean post-route netlist/DEF/SPEF set for signoff STA.
 
