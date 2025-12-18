@@ -115,11 +115,10 @@ Based on the knob analysis results (Pareto trade-off between HPWL and runtime), 
 
 | Design Name | Util % | Placer Alg. | HPWL (mm) | WNS (ns) | TNS (ns) |
 |---|---:|---|---:|---:|---:|
-| Arith | 0.40% | Greedy+SA | 77.45786 | N/A | N/A |
+| Arith | 0.40% | Greedy+SA | 12.82 | N/A | N/A |
 | aes_128 | 75.70% | Greedy+SA | 12487725.800 | N/A | N/A |
 | soc | 62.01% | Greedy+SA | 23529099.160 | N/A | N/A |
 | 6502 | ..% | Greedy+SA | 243.71 | ... | ... |
-| Arith | ..% | Greedy+SA | 12.82 | ... | ... |
 | Z80 | ..% | Greedy+SA |  | 1256.984 | ... |
 **Notes**
 - **Util %** is computed from the Fabric Utilization Report: total used instances / total available fabric slots.
