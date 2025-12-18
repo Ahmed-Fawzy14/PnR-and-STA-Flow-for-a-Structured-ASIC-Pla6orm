@@ -1,0 +1,135 @@
+================================================================================
+SA KNOB ANALYSIS RESULTS - arith
+Generated: 2025-12-16 23:01:56
+================================================================================
+
+Experiment Strategy:
+  Focus: T_initial=4,000,000 with cooling schedule optimization
+  Goal: Fast cooling at beginning, slow cooling at end
+  Strategy:
+    - T_initial: 4,000,000 (fixed)
+    - Higher alpha values (0.90-0.99) for slower overall cooling
+    - Vary num_temp_steps (60, 90, 120, 150) for more exploration
+    - Vary P_refine, W_initial, and beta to find optimal combination
+  moves_per_temp: 1000 (fixed - constant)
+  Baseline values (when not varied):
+    alpha: 0.97
+    num_temp_steps: 60
+    P_refine: 0.7
+    W_initial: 0.5
+    beta: 0.95
+
+Total Experiments: 34
+Successful Experiments: 34
+
+================================================================================
+OVERALL STATISTICS
+================================================================================
+  Best HPWL: 12823.46 µm
+  Worst HPWL: 27371.80 µm
+  Mean HPWL: 21921.19 µm
+  Std Dev HPWL: 5229.25 µm
+  HPWL Range: 14548.34 µm
+  HPWL Improvement: 53.2%
+  Fastest runtime: 17.06 s
+  Slowest runtime: 368.09 s
+  Mean runtime: 72.51 s
+  Runtime Range: 351.03 s
+
+================================================================================
+ALL RESULTS (Sorted by HPWL - Best First)
+================================================================================
+Rank   Experiment Name                               HPWL (µm)       RuntimeMean (s)
+------ --------------------------------------------- --------------- ---------------
+1      T4M_steps=500_alpha=0.80_Prefine=0.9_W=0.3_   12823.46        368.09         
+2      T4M_steps=350_alpha=0.80_Prefine=0.9_W=0.3_   13139.24        252.69         
+3      T4M_steps=250_alpha=0.80_Prefine=0.9_W=0.3_   13391.98        173.68         
+4      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.3_   13949.22        93.69          
+5      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.3_   14028.40        189.28         
+6      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.5_   14434.42        124.47         
+7      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.7_   14605.48        42.70          
+8      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.5_   14787.24        71.83          
+9      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.7_   14985.06        42.87          
+10     T4M_steps=60_alpha=0.80_Prefine=0.9_W=0.7_b   19978.74        17.81          
+11     T4M_steps=60_alpha=0.80_Prefine=0.7_W=0.7_b   20223.48        17.77          
+12     T4M_steps=60_alpha=0.80_Prefine=0.9_W=0.5_b   20339.92        18.19          
+13     T4M_steps=60_alpha=0.80_Prefine=0.7_W=0.3_b   20476.22        50.26          
+14     T4M_steps=60_alpha=0.80_Prefine=0.9_W=0.3_b   20746.22        30.58          
+15     T4M_steps=60_alpha=0.80_Prefine=0.7_W=0.5_b   20899.26        17.68          
+16     T4M_steps=250_alpha=0.97_Prefine=0.7_W=0.7_   24414.42        96.72          
+17     T4M_steps=150_alpha=0.97_Prefine=0.9_W=0.7_   24947.38        44.29          
+18     T4M_steps=150_alpha=0.97_Prefine=0.7_W=0.7_   24995.74        44.31          
+19     T4M_steps=150_alpha=0.97_Prefine=0.9_W=0.3_   25131.06        95.00          
+20     T4M_steps=150_alpha=0.97_Prefine=0.7_W=0.5_   25444.66        125.35         
+21     T4M_steps=150_alpha=0.97_Prefine=0.9_W=0.5_   25449.12        74.82          
+22     T4M_steps=60_alpha=0.85_Prefine=0.7_W=0.5_b   26203.16        17.61          
+23     T4M_steps=60_alpha=0.85_Prefine=0.9_W=0.7_b   26262.90        17.06          
+24     T4M_steps=60_alpha=0.90_Prefine=0.9_W=0.3_b   26355.38        27.11          
+25     T4M_steps=60_alpha=0.85_Prefine=0.9_W=0.5_b   26389.80        17.30          
+26     T4M_steps=60_alpha=0.90_Prefine=0.7_W=0.7_b   26390.36        17.67          
+27     T4M_steps=60_alpha=0.85_Prefine=0.9_W=0.3_b   26426.60        27.16          
+28     T4M_steps=60_alpha=0.90_Prefine=0.9_W=0.7_b   26647.82        17.46          
+29     T4M_steps=60_alpha=0.85_Prefine=0.7_W=0.3_b   26706.92        52.17          
+30     T4M_steps=60_alpha=0.85_Prefine=0.7_W=0.7_b   26758.30        17.92          
+31     T4M_steps=150_alpha=0.97_Prefine=0.7_W=0.3_   26768.22        181.52         
+32     T4M_steps=60_alpha=0.90_Prefine=0.7_W=0.5_b   26831.90        17.65          
+33     T4M_steps=60_alpha=0.90_Prefine=0.7_W=0.3_b   27016.58        45.26          
+34     T4M_steps=60_alpha=0.90_Prefine=0.9_W=0.5_b   27371.80        17.27          
+
+================================================================================
+TOP 10 BEST HPWL RESULTS
+================================================================================
+Rank   Experiment Name                               HPWL (µm)       RuntimeMean (s)
+------ --------------------------------------------- --------------- ---------------
+1      T4M_steps=500_alpha=0.80_Prefine=0.9_W=0.3_   12823.46        368.09         
+2      T4M_steps=350_alpha=0.80_Prefine=0.9_W=0.3_   13139.24        252.69         
+3      T4M_steps=250_alpha=0.80_Prefine=0.9_W=0.3_   13391.98        173.68         
+4      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.3_   13949.22        93.69          
+5      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.3_   14028.40        189.28         
+6      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.5_   14434.42        124.47         
+7      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.7_   14605.48        42.70          
+8      T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.5_   14787.24        71.83          
+9      T4M_steps=150_alpha=0.80_Prefine=0.7_W=0.7_   14985.06        42.87          
+10     T4M_steps=60_alpha=0.80_Prefine=0.9_W=0.7_b   19978.74        17.81          
+
+================================================================================
+TOP 10 FASTEST RESULTS
+================================================================================
+Rank   Experiment Name                               RuntimeMean (s) HPWL (µm)      
+------ --------------------------------------------- --------------- ---------------
+1      T4M_steps=60_alpha=0.85_Prefine=0.9_W=0.7_b   17.06           26262.90       
+2      T4M_steps=60_alpha=0.90_Prefine=0.9_W=0.5_b   17.27           27371.80       
+3      T4M_steps=60_alpha=0.85_Prefine=0.9_W=0.5_b   17.30           26389.80       
+4      T4M_steps=60_alpha=0.90_Prefine=0.9_W=0.7_b   17.46           26647.82       
+5      T4M_steps=60_alpha=0.85_Prefine=0.7_W=0.5_b   17.61           26203.16       
+6      T4M_steps=60_alpha=0.90_Prefine=0.7_W=0.5_b   17.65           26831.90       
+7      T4M_steps=60_alpha=0.90_Prefine=0.7_W=0.7_b   17.67           26390.36       
+8      T4M_steps=60_alpha=0.80_Prefine=0.7_W=0.5_b   17.68           20899.26       
+9      T4M_steps=60_alpha=0.80_Prefine=0.7_W=0.7_b   17.77           20223.48       
+10     T4M_steps=60_alpha=0.80_Prefine=0.9_W=0.7_b   17.81           19978.74       
+
+================================================================================
+BEST TRADE-OFF (Balanced Runtime/HPWL)
+================================================================================
+  Experiment: T4M_steps=150_alpha=0.80_Prefine=0.9_W=0.7_beta=0.98
+  HPWL: 14605.48 µm
+  Runtime: 42.70 s
+
+================================================================================
+PARAMETER ANALYSIS
+================================================================================
+  Best alpha (avg HPWL): 0.80 (avg: 16587.22 µm)
+  Best num_temp_steps (avg HPWL): 500 (avg: 12823.46 µm)
+  Best moves_per_temp (avg HPWL): 1000 (avg: 21921.19 µm)
+  Best T_initial (avg HPWL): 4000000 (avg: 21921.19 µm)
+  Best P_refine (avg HPWL): 0.90 (avg: 21041.30 µm)
+  Best W_initial (avg HPWL): 0.30 (avg: 20535.35 µm)
+  Best beta (avg HPWL): 0.90 (avg: 20535.35 µm)
+
+================================================================================
+OUTPUT FILES
+================================================================================
+  Plot: build/arith/sa_knob_analysis.png
+  Results summary: build/arith/sa_knob_analysis_results.txt
+  Results CSV: build/arith/sa_knob_analysis_results.csv
+  Best HPWL map: build/arith/arith_best_hpwl.map
